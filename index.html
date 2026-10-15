@@ -1,0 +1,2129 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>[hidden]{display:none!important}body{margin:0}</style>
+<title>Labo-68K</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Simulateur 68000, moulinette et entraînement type contrôle S3 (EPITA).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* Concept : l'établi d'un labo d'électronique la nuit — fond bleu nuit quadrillé façon oscilloscope,
+   panneaux de registres comme sur la datasheet Motorola, un seul accent électrique.
+   Thème sombre assumé (single-theme), toutes les couleurs explicites. */
+:root{
+  color-scheme: dark;
+  --bg:#05080F; --bg2:#08101D; --panel:#0C1526; --panel2:#111D34; --inset:#070D19;
+  --line:#1A2843; --line2:#26385E;
+  --fg:#E3EBF9; --muted:#8C9DBE; --dim:#5B6C8F;
+  --acc:#4D8DFF; --acc-ink:#04122B; --acc-soft:rgba(77,141,255,.14); --acc-glow:rgba(77,141,255,.45);
+  --ok:#3BD69C; --ok-soft:rgba(59,214,156,.13); --ko:#FF6B82; --ko-soft:rgba(255,107,130,.13); --warn:#FFC24D; --warn-soft:rgba(255,194,77,.13);
+  --t-mn:#7FB2FF; --t-reg:#F5B86B; --t-num:#7DE3C8; --t-com:#56688C; --t-lab:#E0A3FF; --t-str:#B7E57A;
+  --f-disp:"Chakra Petch","Bahnschrift","Segoe UI",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --r:10px; --r-sm:6px;
+}
+:root[data-acc="cyan"]{--acc:#2DD4E8;--acc-ink:#021A1F;--acc-soft:rgba(45,212,232,.13);--acc-glow:rgba(45,212,232,.45)}
+:root[data-acc="indigo"]{--acc:#8E86FF;--acc-ink:#0D0A2B;--acc-soft:rgba(142,134,255,.15);--acc-glow:rgba(142,134,255,.45)}
+:root[data-acc="ambre"]{--acc:#FFB547;--acc-ink:#2A1A02;--acc-soft:rgba(255,181,71,.13);--acc-glow:rgba(255,181,71,.4)}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--f-body);font-size:15px;line-height:1.55;min-height:100%;
+  background:
+    radial-gradient(1200px 600px at 85% -10%, var(--acc-soft), transparent 60%),
+    linear-gradient(var(--bg),var(--bg));
+}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
+  background-image:linear-gradient(rgba(120,150,210,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(120,150,210,.05) 1px,transparent 1px);
+  background-size:28px 28px;mask-image:linear-gradient(to bottom,#000 0%,transparent 70%)}
+a{color:var(--acc)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+code,.mono{font-family:var(--f-mono);font-variant-ligatures:none}
+.wrap{position:relative;z-index:1;max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* ---------- barre du haut ---------- */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:rgba(5,8,15,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:18px;padding-block:10px;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--fg);font-family:var(--f-disp);font-weight:700;font-size:19px;letter-spacing:.04em}
+.chip68{width:30px;height:30px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);display:grid;place-items:center;position:relative;font-family:var(--f-mono);font-size:9px;color:var(--acc)}
+.chip68::before,.chip68::after{content:"";position:absolute;left:-5px;right:-5px;top:7px;bottom:7px;border-left:3px dotted var(--dim);border-right:3px dotted var(--dim)}
+.logo b{color:var(--acc)}
+nav.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}
+nav.tabs::-webkit-scrollbar{display:none}
+nav.tabs a{white-space:nowrap;text-decoration:none;color:var(--muted);font-weight:500;font-size:14px;padding:7px 11px;border-radius:7px;transition:color .15s,background .15s}
+nav.tabs a:hover{color:var(--fg);background:var(--panel)}
+nav.tabs a.on{color:var(--fg);background:var(--panel2);box-shadow:inset 0 -2px 0 var(--acc)}
+.hud{display:flex;align-items:center;gap:12px}
+.lvl{display:flex;align-items:center;gap:9px;min-width:0}
+.lvl .badge{font-family:var(--f-disp);font-weight:700;font-size:13px;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--acc-soft);color:var(--acc);border:1px solid var(--acc)}
+.lvl .meta{display:flex;flex-direction:column;gap:3px;min-width:110px}
+.lvl .name{font-size:12px;color:var(--muted);line-height:1;white-space:nowrap}
+.xpbar{height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+.xpbar i{display:block;height:100%;background:var(--acc);box-shadow:0 0 10px var(--acc-glow);transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.combo{font-family:var(--f-mono);font-size:13px;padding:4px 9px;border-radius:20px;border:1px solid var(--line2);color:var(--muted);white-space:nowrap}
+.combo.hot{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
+.iconbtn{background:none;border:1px solid var(--line2);border-radius:8px;width:34px;height:34px;display:grid;place-items:center;cursor:pointer;color:var(--muted)}
+.iconbtn:hover{color:var(--fg);border-color:var(--dim)}
+.swatches{display:flex;gap:6px}
+.sw{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+.sw.on{border-color:var(--fg)}
+
+/* ---------- général ---------- */
+main{padding-block:28px 80px}
+.eyebrow{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--acc)}
+h1,h2,h3{font-family:var(--f-disp);font-weight:700;line-height:1.12;margin:0;text-wrap:balance;letter-spacing:.005em}
+h1{font-size:clamp(30px,5vw,52px)}
+h2{font-size:clamp(23px,3vw,31px)}
+h3{font-size:18px;font-weight:600}
+p{margin:0}
+.lead{color:var(--muted);max-width:62ch;font-size:16px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:18px;align-items:start}
+.grid2>*,.grid3>*,.grid4>*{min-width:0}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.grid2.eq{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2.lft{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}
+@media (max-width:900px){.grid2,.grid2.eq,.grid2.lft,.grid3{grid-template-columns:minmax(0,1fr)}.grid4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){.grid4{grid-template-columns:minmax(0,1fr)}.lvl .meta{display:none}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px}
+.card.flat{background:transparent}
+.card h3{margin-bottom:10px}
+.sub{color:var(--muted);font-size:13.5px}
+.tiny{font-size:12px;color:var(--dim)}
+.sep{height:1px;background:var(--line);border:0;margin:6px 0}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:8px;padding:9px 15px;font-weight:600;font-size:14px;cursor:pointer;border:1px solid var(--line2);background:var(--panel2);color:var(--fg);text-decoration:none;transition:transform .08s,background .15s,border-color .15s,box-shadow .15s;white-space:nowrap}
+.btn:hover{border-color:var(--dim)}
+.btn:active{transform:translateY(1px)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:var(--acc-ink);box-shadow:0 0 0 0 var(--acc-glow)}
+.btn.pri:hover{box-shadow:0 0 18px -2px var(--acc-glow)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:6px 10px;font-size:13px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+kbd{font-family:var(--f-mono);font-size:11px;border:1px solid currentColor;border-bottom-width:2px;border-radius:4px;padding:0 4px;opacity:.7}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-family:var(--f-mono);padding:3px 8px;border-radius:20px;background:var(--panel2);border:1px solid var(--line2);color:var(--muted)}
+.pill.ok{color:var(--ok);border-color:rgba(59,214,156,.4);background:var(--ok-soft)}
+.pill.ko{color:var(--ko);border-color:rgba(255,107,130,.4);background:var(--ko-soft)}
+.pill.acc{color:var(--acc);border-color:var(--acc);background:var(--acc-soft)}
+input.field,select.field{background:var(--inset);border:1px solid var(--line2);border-radius:7px;padding:8px 10px;font-family:var(--f-mono);font-size:14px;width:100%;min-width:0;transition:border-color .15s,background .2s}
+input.field:focus{border-color:var(--acc);outline:none;box-shadow:0 0 0 3px var(--acc-soft)}
+.field.ok{border-color:var(--ok);background:var(--ok-soft)}
+.field.ko{border-color:var(--ko);background:var(--ko-soft)}
+label.lab{font-family:var(--f-mono);font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+.check{display:inline-flex;gap:8px;align-items:center;font-size:13.5px;color:var(--muted);cursor:pointer}
+
+/* ---------- registres & mémoire (style datasheet) ---------- */
+.regs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 14px;font-family:var(--f-mono);font-size:13.5px}
+.reg{display:flex;justify-content:space-between;gap:8px;padding:5px 8px;border-radius:6px;background:var(--inset);border:1px solid var(--line);white-space:nowrap}
+.reg b{color:var(--t-reg);font-weight:500}
+.reg.flash{animation:flash 1s ease-out}
+@keyframes flash{0%{background:var(--acc-soft);border-color:var(--acc)}100%{background:var(--inset);border-color:var(--line)}}
+.memtbl{font-family:var(--f-mono);font-size:14px;display:flex;flex-direction:column;gap:4px;overflow-x:auto}
+.memrow{display:flex;gap:12px;white-space:nowrap}
+.memrow .ad{color:var(--dim)}
+.memrow .bytes span{display:inline-block;width:2.3ch;text-align:center;margin-right:.5ch;border-radius:3px}
+.memrow .bytes span.ch{background:var(--acc-soft);color:var(--acc);outline:1px solid var(--acc)}
+.memrow .bytes span.ok{background:var(--ok-soft);color:var(--ok)}
+.memrow .bytes span.ko{background:var(--ko-soft);color:var(--ko);text-decoration:line-through}
+.instr{font-family:var(--f-mono);font-size:clamp(17px,2.6vw,24px);font-weight:500;padding:14px 16px;background:var(--inset);border:1px solid var(--line2);border-left:3px solid var(--acc);border-radius:8px;overflow-x:auto;white-space:nowrap}
+.ansgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:520px){.ansgrid,.regs{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.memin{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 10px;align-items:center;font-family:var(--f-mono)}
+.memin .ad{color:var(--dim);font-size:13px}
+.memin input{letter-spacing:.06em}
+
+/* ---------- feedback ---------- */
+.fb{border-radius:9px;padding:14px 16px;border:1px solid var(--line2);background:var(--panel2);display:flex;flex-direction:column;gap:10px}
+.fb.ok{border-color:rgba(59,214,156,.5);background:linear-gradient(180deg,var(--ok-soft),transparent)}
+.fb.ko{border-color:rgba(255,107,130,.5);background:linear-gradient(180deg,var(--ko-soft),transparent)}
+.fb .verdict{font-family:var(--f-disp);font-weight:700;font-size:20px;display:flex;gap:10px;align-items:center}
+.fb.ok .verdict{color:var(--ok)} .fb.ko .verdict{color:var(--ko)}
+.chain{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-family:var(--f-mono);font-size:13.5px}
+.chain span{padding:2px 7px;border-radius:5px;background:var(--inset);border:1px solid var(--line)}
+.chain span:last-child{border-color:var(--acc);color:var(--acc)}
+.chain i{color:var(--dim);font-style:normal}
+.note{font-size:13px;color:var(--warn);padding-left:10px;border-left:2px solid var(--warn)}
+.explain{display:flex;flex-direction:column;gap:7px;font-size:14px}
+.explain code{background:var(--inset);padding:1px 5px;border-radius:4px;font-size:13px}
+.shake{animation:shake .38s}
+@keyframes shake{20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
+.pop{position:fixed;z-index:60;pointer-events:none;font-family:var(--f-disp);font-weight:700;font-size:22px;color:var(--acc);text-shadow:0 0 18px var(--acc-glow);animation:pop 1.1s ease-out forwards}
+@keyframes pop{0%{opacity:0;transform:translate(-50%,0) scale(.7)}15%{opacity:1;transform:translate(-50%,-10px) scale(1.1)}100%{opacity:0;transform:translate(-50%,-70px) scale(1)}}
+#toasts{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:70;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.toast{background:var(--panel2);border:1px solid var(--line2);border-left:3px solid var(--acc);border-radius:8px;padding:10px 14px;max-width:min(360px,calc(100vw - 32px));box-shadow:0 12px 30px rgba(0,0,0,.45);animation:tin .3s ease-out;font-size:14px}
+.toast b{font-family:var(--f-disp)}
+@keyframes tin{from{opacity:0;transform:translateY(10px)}}
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:65}
+
+/* ---------- flags ---------- */
+.flags{display:flex;gap:8px;flex-wrap:wrap}
+.flag{width:56px;height:62px;border-radius:9px;border:1px solid var(--line2);background:var(--inset);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;gap:2px;transition:all .12s;user-select:none}
+.flag .k{font-family:var(--f-disp);font-weight:700;font-size:13px;color:var(--muted)}
+.flag .v{font-family:var(--f-mono);font-size:22px;font-weight:700;color:var(--dim)}
+.flag.on{border-color:var(--acc);background:var(--acc-soft)}
+.flag.on .v{color:var(--acc);text-shadow:0 0 12px var(--acc-glow)}
+.flag.ok{outline:2px solid var(--ok)} .flag.ko{outline:2px solid var(--ko)}
+.leds{display:flex;gap:6px;font-family:var(--f-mono);font-size:12px}
+.led{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted)}
+.led i{width:12px;height:12px;border-radius:50%;background:var(--line2);transition:background .2s,box-shadow .2s}
+.led.on i{background:var(--acc);box-shadow:0 0 10px var(--acc-glow)}
+.bigop{font-family:var(--f-mono);font-size:clamp(26px,5vw,42px);font-weight:700;letter-spacing:.02em;overflow-x:auto;white-space:nowrap}
+.bin{font-family:var(--f-mono);font-size:12.5px;color:var(--muted);overflow-x:auto;white-space:pre;line-height:1.5}
+.bin b{color:var(--acc);font-weight:500}
+
+/* ---------- éditeur ---------- */
+.ed{display:flex;border:1px solid var(--line2);border-radius:9px;background:var(--inset);overflow:hidden;height:var(--edh,440px);font-family:var(--f-mono);font-size:13.5px;line-height:21px;tab-size:8;-moz-tab-size:8}
+.gut{flex:none;width:48px;overflow:hidden;background:var(--bg2);border-right:1px solid var(--line);padding-block:10px;color:var(--dim);text-align:right;user-select:none}
+.gut div{height:21px;padding-right:9px;cursor:pointer;position:relative}
+.gut div:hover{color:var(--muted)}
+.gut div.bp::before{content:"";position:absolute;left:7px;top:6px;width:9px;height:9px;border-radius:50%;background:var(--ko);box-shadow:0 0 8px var(--ko)}
+.edw{position:relative;flex:1;min-width:0}
+.edw pre,.edw textarea{position:absolute;inset:0;margin:0;padding:10px 12px;font:inherit;line-height:inherit;white-space:pre;tab-size:8;-moz-tab-size:8;border:0;letter-spacing:0;font-variant-ligatures:none}
+.edw pre{overflow:hidden;pointer-events:none;color:var(--fg)}
+.edw textarea{background:transparent;color:transparent;caret-color:var(--acc);resize:none;overflow:auto;outline:none}
+.edw textarea::selection{background:rgba(77,141,255,.3);color:transparent}
+.ln{display:inline-block;min-width:100%}
+.ln.cur{background:var(--acc-soft);box-shadow:inset 3px 0 0 var(--acc)}
+.ln.err{background:var(--ko-soft);box-shadow:inset 3px 0 0 var(--ko)}
+.t-mn{color:var(--t-mn);font-weight:500}.t-reg{color:var(--t-reg)}.t-num{color:var(--t-num)}.t-com{color:var(--t-com);font-style:italic}.t-lab{color:var(--t-lab)}.t-str{color:var(--t-str)}
+.listing{font-family:var(--f-mono);font-size:13.5px;line-height:1.6;background:var(--inset);border:1px solid var(--line2);border-radius:9px;padding:12px 14px;overflow-x:auto;white-space:pre;tab-size:8}
+
+/* ---------- labo ---------- */
+.labo{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:980px){.labo{grid-template-columns:minmax(0,1fr)}}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.errbar{font-family:var(--f-mono);font-size:13px;color:var(--ko);background:var(--ko-soft);border:1px solid rgba(255,107,130,.4);border-radius:7px;padding:8px 11px}
+.status{font-family:var(--f-mono);font-size:12.5px;color:var(--muted)}
+.console{font-family:var(--f-mono);font-size:13px;background:#02050B;border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-height:56px;max-height:160px;overflow:auto;white-space:pre-wrap;color:var(--t-num)}
+.memview{font-family:var(--f-mono);font-size:12.5px;line-height:1.7;overflow-x:auto;white-space:pre}
+.memview .ch{background:var(--acc);color:var(--acc-ink);border-radius:2px}
+.memview .sp{color:var(--warn)}
+.memview .a{color:var(--dim)}
+
+/* ---------- moulinette ---------- */
+.moul{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:900px){.moul{grid-template-columns:minmax(0,1fr)}}
+.chlist{display:flex;flex-direction:column;gap:6px}
+@media (max-width:900px){.chlist{flex-direction:row;overflow-x:auto;padding-bottom:4px}.chlist .chi{flex:none;width:190px}}
+.chi{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);cursor:pointer;width:100%}
+.chi:hover{border-color:var(--line2)}
+.chi.on{border-color:var(--acc);background:var(--acc-soft)}
+.chi .nm{font-weight:600;font-size:14px}
+.dots{display:flex;gap:3px}.dots i{width:6px;height:6px;border-radius:50%;background:var(--line2)}.dots i.f{background:var(--acc)}
+.done{color:var(--ok);font-family:var(--f-mono);font-size:12px}
+.term{font-family:var(--f-mono);font-size:13px;background:#02050B;border:1px solid var(--line);border-radius:9px;padding:12px 14px;max-height:360px;overflow:auto;line-height:1.65}
+.term .l{white-space:pre-wrap;animation:tin .2s ease-out both}
+.term .okk{color:var(--ok)} .term .kok{color:var(--ko)} .term .dm{color:var(--dim)} .term .hd{color:var(--acc)}
+
+/* ---------- accueil ---------- */
+.hero{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:28px;align-items:center;padding-block:10px 26px}
+@media (max-width:900px){.hero{grid-template-columns:minmax(0,1fr)}}
+.hero h1 em{font-style:normal;color:var(--acc);text-shadow:0 0 28px var(--acc-glow)}
+.cpu{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line2);border-radius:14px;padding:16px;position:relative;overflow:hidden}
+.cpu::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 3px)}
+.cpu .hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.cpu .cur{font-family:var(--f-mono);font-size:14px;padding:8px 10px;border-radius:7px;background:var(--inset);border:1px solid var(--line);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.live{display:inline-flex;align-items:center;gap:6px}.live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);animation:blink 1.4s infinite}
+@keyframes blink{50%{opacity:.3}}
+.skill{display:flex;flex-direction:column;gap:10px}
+.skill .top2{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.skill .pts{font-family:var(--f-mono);font-size:12px;color:var(--dim)}
+.meter{height:7px;background:var(--line);border-radius:4px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--acc);border-radius:4px;transition:width .6s}
+.big{font-family:var(--f-disp);font-weight:700;font-size:40px;line-height:1}
+.big small{font-size:18px;color:var(--muted)}
+.badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.bdg{display:flex;gap:10px;align-items:center;padding:9px 10px;border-radius:8px;border:1px dashed var(--line2);color:var(--dim);font-size:13px}
+.bdg .ic{width:28px;height:28px;flex:none;border-radius:7px;display:grid;place-items:center;font-family:var(--f-mono);font-size:11px;font-weight:700;background:var(--inset);border:1px solid var(--line2)}
+.bdg.got{border-style:solid;border-color:var(--acc);color:var(--fg);background:var(--acc-soft)}
+.bdg.got .ic{color:var(--acc-ink);background:var(--acc);border-color:var(--acc)}
+
+/* ---------- guide ---------- */
+.gcard{display:flex;flex-direction:column;gap:12px}
+.gcard ol,.gcard ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:5px;font-size:14px}
+.trap{background:var(--warn-soft);border:1px solid rgba(255,194,77,.35);border-radius:8px;padding:10px 12px;font-size:13.5px}
+.trap b{color:var(--warn);font-family:var(--f-disp);letter-spacing:.03em}
+table.t{width:100%;border-collapse:collapse;font-size:13.5px}
+table.t th{text-align:left;font-family:var(--f-mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;border-bottom:1px solid var(--line2);padding:7px 8px}
+table.t td{border-bottom:1px solid var(--line);padding:7px 8px;vertical-align:top}
+table.t td code{white-space:nowrap}
+.tblwrap{overflow-x:auto}
+
+/* ---------- examen ---------- */
+.timer{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--hh,64px) + 6px);z-index:10;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:10px 14px;margin-bottom:16px}
+.timer .clock{font-family:var(--f-mono);font-size:24px;font-weight:700;color:var(--acc);font-variant-numeric:tabular-nums}
+.timer .sub{flex:1;min-width:0}@media (max-width:600px){.timer .sub{display:none}}
+.timer .clock.warn{color:var(--ko);animation:blink 1s infinite}
+.exsec{display:flex;flex-direction:column;gap:12px}
+.exsec .hdr{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line2);padding-bottom:8px}
+.erow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr) minmax(0,1fr);gap:10px;align-items:start;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--panel)}
+.erow.e2r{grid-template-columns:repeat(3,minmax(0,1fr))}.erow.e3r{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+@media (max-width:820px){.erow,.erow.e2r,.erow.e3r{grid-template-columns:minmax(0,1fr)}}
+.score-ring{width:170px;height:170px}
+.mini-fl{display:flex;gap:4px}
+.mini-fl button{width:34px;height:34px;border-radius:6px;border:1px solid var(--line2);background:var(--inset);font-family:var(--f-mono);font-weight:700;cursor:pointer;color:var(--dim)}
+.mini-fl button.on{border-color:var(--acc);color:var(--acc);background:var(--acc-soft)}
+.mini-fl button.ok{outline:2px solid var(--ok)}.mini-fl button.ko{outline:2px solid var(--ko)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head><body>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="#home" aria-label="Labo-68K, accueil"><span class="chip68">68k</span>LABO<b>·</b>68K</a>
+    <nav class="tabs" id="tabs" aria-label="Sections">
+      <a href="#home">Accueil</a>
+      <a href="#guide">Méthode 20/20</a>
+      <a href="#ex1">Ex.1 Adressage</a>
+      <a href="#ex2">Ex.2 Flags</a>
+      <a href="#ex3">Ex.3 Cours</a>
+      <a href="#ex4">Ex.4 Programme</a>
+      <a href="#labo">Labo</a>
+      <a href="#moulinette">Moulinette</a>
+      <a href="#exam">Examen blanc</a>
+    </nav>
+    <div class="hud">
+      <span class="combo" id="combo" title="Bonnes réponses d'affilée">×0</span>
+      <div class="lvl" title="Niveau et expérience">
+        <span class="badge" id="lvnum">1</span>
+        <span class="meta"><span class="name" id="lvname">Octet errant</span><span class="xpbar"><i id="xpbar" style="width:0%"></i></span></span>
+      </div>
+      <button class="iconbtn" id="sndbtn" type="button" aria-label="Activer le son" title="Son">♪</button>
+      <div class="swatches" role="group" aria-label="Couleur d'accent">
+        <button class="sw" type="button" data-acc="blue" style="background:#4D8DFF" aria-label="Bleu électrique"></button>
+        <button class="sw" type="button" data-acc="cyan" style="background:#2DD4E8" aria-label="Cyan"></button>
+        <button class="sw" type="button" data-acc="indigo" style="background:#8E86FF" aria-label="Indigo"></button>
+        <button class="sw" type="button" data-acc="ambre" style="background:#FFB547" aria-label="Ambre"></button>
+      </div>
+    </div>
+  </div>
+</header>
+<main class="wrap" id="app"></main>
+<div id="toasts" aria-live="polite"></div>
+<canvas id="confetti"></canvas>
+<script>
+/* ==========================================================================
+   LABO-68K — Moteur 68000 (assembleur + CPU) — 100 % JavaScript, sans dépendance
+   ========================================================================== */
+const M68K = (function () {
+  'use strict';
+  const MASK = { 1: 0xFF, 2: 0xFFFF, 4: 0xFFFFFFFF };
+  const MSB = { 1: 0x80, 2: 0x8000, 4: 0x80000000 };
+  const SZ = { B: 1, W: 2, L: 4, S: 1 };
+  const tr = (v, s) => (s === 4 ? v >>> 0 : (v & MASK[s]) >>> 0);
+  const sx = (v, s) => {
+    if (s === 1) { v &= 0xFF; return v & 0x80 ? v - 256 : v; }
+    if (s === 2) { v &= 0xFFFF; return v & 0x8000 ? v - 65536 : v; }
+    return v | 0;
+  };
+  const isNeg = (v, s) => ((tr(v, s) & MSB[s]) >>> 0) !== 0;
+  const H = (v, n = 8) => '$' + (v >>> 0).toString(16).toUpperCase().padStart(n, '0');
+  const hexs = (v, s) => H(tr(v, s), s * 2);
+
+  class AsmError extends Error { constructor(m, line) { super(m); this.line = line; } }
+  class RunError extends Error { constructor(m, line) { super(m); this.line = line; } }
+
+  const MNEMS = new Set(('ABCD ADD ADDA ADDI ADDQ ADDX AND ANDI ASL ASR BCHG BCLR BSET BTST BRA BSR CHK CLR CMP CMPA CMPI CMPM DIVS DIVU EOR EORI EXG EXT ILLEGAL JMP JSR LEA LINK LSL LSR MOVE MOVEA MOVEM MOVEQ MULS MULU NEG NEGX NOP NOT OR ORI PEA RESET ROL ROR ROXL ROXR RTE RTR RTS STOP SUB SUBA SUBI SUBQ SUBX SWAP TAS TRAP TRAPV TST UNLK SIMHALT ORG EQU DC DS END DBRA').split(' '));
+  const CCS = ['T', 'F', 'HI', 'LS', 'CC', 'HS', 'CS', 'LO', 'NE', 'EQ', 'VC', 'VS', 'PL', 'MI', 'GE', 'LT', 'GT', 'LE'];
+  function ccOf(op) {
+    if (op === 'DBRA') return { kind: 'DB', cc: 'F' };
+    if (MNEMS.has(op)) return null;
+    if (op[0] === 'B' && CCS.includes(op.slice(1)) && op !== 'BT' && op !== 'BF') return { kind: 'B', cc: op.slice(1) };
+    if (op.startsWith('DB') && CCS.includes(op.slice(2))) return { kind: 'DB', cc: op.slice(2) };
+    if (op[0] === 'S' && CCS.includes(op.slice(1))) return { kind: 'S', cc: op.slice(1) };
+    return null;
+  }
+  const isMnem = tok => { const b = tok.toUpperCase().split('.')[0]; return MNEMS.has(b) || !!ccOf(b); };
+
+  /* ---------------- expressions ---------------- */
+  function evalExpr(str, sym, line) {
+    const s = String(str).trim(); let i = 0;
+    const ws = () => { while (s[i] === ' ') i++; };
+    function prim() {
+      ws(); const c = s[i];
+      if (c === '-') { i++; return -prim(); }
+      if (c === '+') { i++; return prim(); }
+      if (c === '~') { i++; return ~prim(); }
+      if (c === '(') { i++; const v = expr(); ws(); if (s[i] !== ')') throw new AsmError('Parenthèse manquante dans « ' + str + ' »', line); i++; return v; }
+      const rest = s.slice(i); let m;
+      if ((m = /^\$([0-9a-f]+)/i.exec(rest))) { i += m[0].length; return parseInt(m[1], 16); }
+      if ((m = /^%([01]+)/.exec(rest))) { i += m[0].length; return parseInt(m[1], 2); }
+      if ((m = /^@([0-7]+)/.exec(rest))) { i += m[0].length; return parseInt(m[1], 8); }
+      if ((m = /^[0-9]+/.exec(rest))) {
+        i += m[0].length;
+        if (/^[0-9a-f]/i.test(s.slice(i))) throw new AsmError('Nombre invalide « ' + str + ' » (oubli du $ pour l\'hexadécimal ?)', line);
+        return parseInt(m[0], 10);
+      }
+      if ((m = /^'([^']{1,4})'/.exec(rest))) { i += m[0].length; let v = 0; for (const ch of m[1]) v = v * 256 + (ch.charCodeAt(0) & 0xFF); return v; }
+      if ((m = /^[A-Za-z_.][A-Za-z0-9_.]*/.exec(rest))) {
+        i += m[0].length; const k = m[0].toUpperCase();
+        if (Object.prototype.hasOwnProperty.call(sym, k)) return sym[k];
+        throw new AsmError('Étiquette inconnue : « ' + m[0] + ' »', line);
+      }
+      throw new AsmError('Expression invalide : « ' + str + ' »', line);
+    }
+    function term() {
+      let v = prim();
+      for (;;) {
+        ws(); const c = s[i];
+        if (c === '*') { i++; v = v * prim(); }
+        else if (c === '/') { i++; const d = prim(); if (!d) throw new AsmError('Division par zéro dans une expression', line); v = Math.trunc(v / d); }
+        else if (c === '&') { i++; v = v & prim(); }
+        else if (c === '<' && s[i + 1] === '<') { i += 2; v = v << prim(); }
+        else if (c === '>' && s[i + 1] === '>') { i += 2; v = v >> prim(); }
+        else return v;
+      }
+    }
+    function expr() {
+      let v = term();
+      for (;;) {
+        ws(); const c = s[i];
+        if (c === '+') { i++; v = v + term(); }
+        else if (c === '-') { i++; v = v - term(); }
+        else if (c === '|') { i++; v = v | term(); }
+        else return v;
+      }
+    }
+    if (!s) throw new AsmError('Expression vide', line);
+    const v = expr(); ws();
+    if (i < s.length) throw new AsmError('Expression invalide : « ' + str + ' »', line);
+    return v;
+  }
+
+  /* ---------------- opérandes ---------------- */
+  const anIdx = t => (t.toUpperCase() === 'SP' ? 7 : +t[1]);
+  const regOf = t => { t = t.toUpperCase(); if (t === 'SP') return { t: 'a', n: 7 }; return { t: t[0] === 'D' ? 'd' : 'a', n: +t[1] }; };
+  function parseList(t, line) {
+    let mask = 0;
+    const idx = r => { const g = regOf(r); return (g.t === 'd' ? 0 : 8) + g.n; };
+    for (const part of t.split('/')) {
+      const rg = part.split('-');
+      if (rg.length === 1) mask |= 1 << idx(rg[0]);
+      else if (rg.length === 2) {
+        let a = idx(rg[0]), b = idx(rg[1]);
+        if ((a < 8) !== (b < 8)) throw new AsmError('Plage de registres invalide « ' + part + ' »', line);
+        if (a > b) [a, b] = [b, a];
+        for (let k = a; k <= b; k++) mask |= 1 << k;
+      } else throw new AsmError('Liste de registres invalide « ' + t + ' »', line);
+    }
+    return mask;
+  }
+  function mkDisp(e, base, xr, xs) {
+    e = (e || '').trim() || '0';
+    const B = base.toUpperCase();
+    if (B === 'PC') return { m: 'pc', e, x: xr ? regOf(xr) : null, xs: xs && xs.toUpperCase() === 'L' ? 4 : 2 };
+    if (xr) return { m: 'idx', r: anIdx(base), e, x: regOf(xr), xs: xs && xs.toUpperCase() === 'L' ? 4 : 2 };
+    return { m: 'disp', r: anIdx(base), e };
+  }
+  function parseOperand(raw, line) {
+    const t = raw.trim(), u = t.toUpperCase(); let m;
+    if (!t) throw new AsmError('Opérande vide (virgule en trop ?)', line);
+    if (t[0] === '#') return { m: 'imm', e: t.slice(1) };
+    if (/^D[0-7]$/i.test(t)) return { m: 'dn', r: +t[1] };
+    if (/^(A[0-7]|SP)$/i.test(t)) return { m: 'an', r: anIdx(t) };
+    if (u === 'CCR') return { m: 'ccr' };
+    if (u === 'SR') return { m: 'sr' };
+    if (u === 'USP') return { m: 'usp' };
+    if ((m = /^\(\s*(A[0-7]|SP)\s*\)$/i.exec(t))) return { m: 'ind', r: anIdx(m[1]) };
+    if ((m = /^\(\s*(A[0-7]|SP)\s*\)\+$/i.exec(t))) return { m: 'post', r: anIdx(m[1]) };
+    if ((m = /^-\(\s*(A[0-7]|SP)\s*\)$/i.exec(t))) return { m: 'pre', r: anIdx(m[1]) };
+    if (/^(D[0-7]|A[0-7]|SP)([\/-](D[0-7]|A[0-7]|SP))+$/i.test(t)) return { m: 'list', mask: parseList(t, line) };
+    if ((m = /^\(\s*(A[0-7]|SP|PC)\s*,\s*(D[0-7]|A[0-7]|SP)(?:\.([WL]))?\s*\)$/i.exec(t))) return mkDisp('0', m[1], m[2], m[3]);
+    if ((m = /^\(([^(),]*),\s*(A[0-7]|SP|PC)\s*(?:,\s*(D[0-7]|A[0-7]|SP)(?:\.([WL]))?)?\s*\)$/i.exec(t))) return mkDisp(m[1], m[2], m[3], m[4]);
+    if ((m = /^(.*?)\(\s*(A[0-7]|SP|PC)\s*(?:,\s*(D[0-7]|A[0-7]|SP)(?:\.([WL]))?)?\s*\)$/i.exec(t))) return mkDisp(m[1], m[2], m[3], m[4]);
+    if ((m = /^(.+)\.([WL])$/i.exec(t)) && t[0] !== "'" && !/^[A-Za-z_]/.test(t)) return { m: 'abs', e: m[1] };
+    return { m: 'abs', e: t };
+  }
+
+  /* ---------------- lignes ---------------- */
+  function stripComment(line) {
+    if (/^\s*\*/.test(line)) return '';
+    let q = null;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (q) { if (c === q) q = null; }
+      else if (c === "'" || c === '"') q = c;
+      else if (c === ';') return line.slice(0, i);
+    }
+    return line;
+  }
+  function takeOperandField(s) {
+    let depth = 0, q = null;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (q) { if (c === q) q = null; continue; }
+      if (c === "'" || c === '"') { q = c; continue; }
+      if (c === '(') depth++;
+      else if (c === ')') depth--;
+      else if ((c === ' ') && depth === 0) {
+        let j = i - 1; while (j >= 0 && s[j] === ' ') j--;
+        let k = i + 1; while (k < s.length && s[k] === ' ') k++;
+        if (s[j] === ',' || s[k] === ',') continue;
+        return s.slice(0, i);
+      }
+    }
+    return s;
+  }
+  function splitOperands(s) {
+    const out = []; let depth = 0, cur = '', q = null;
+    for (const c of s) {
+      if (q) { cur += c; if (c === q) q = null; continue; }
+      if (c === "'" || c === '"') { q = c; cur += c; continue; }
+      if (c === '(') depth++;
+      if (c === ')') depth--;
+      if (c === ',' && depth === 0) { out.push(cur.trim()); cur = ''; continue; }
+      cur += c;
+    }
+    if (cur.trim() !== '' || out.length) out.push(cur.trim());
+    return out;
+  }
+  function parseLine(line, no) {
+    const raw = stripComment(line).replace(/\t/g, ' ').replace(/\s+$/, '');
+    if (!raw.trim()) return null;
+    let label = null, rest = raw, m;
+    if ((m = /^\s*([A-Za-z_.][\w.]*)\s+EQU\s+(.*)$/i.exec(raw))) return { label: m[1], op: 'EQU', size: null, ops: [m[2].trim()], no };
+    if (raw[0] !== ' ' && (m = /^([A-Za-z_.][\w.]*)(:?)/.exec(raw))) {
+      if (m[2] === ':' || !isMnem(m[1])) { label = m[1]; rest = raw.slice(m[0].length); }
+    } else if ((m = /^\s+([A-Za-z_.][\w.]*):/.exec(raw))) { label = m[1]; rest = raw.slice(m[0].length); }
+    else if (raw[0] !== ' ' && /^[^A-Za-z_.\s]/.test(raw)) throw new AsmError('Étiquette invalide en début de ligne', no);
+    rest = rest.trim();
+    if (!rest) return { label, op: null, no };
+    const mm = /^([A-Za-z]+)(?:\.([A-Za-z]+))?(?=\s|$)/.exec(rest);
+    if (!mm) throw new AsmError('Instruction illisible : « ' + rest + ' »', no);
+    const op = mm[1].toUpperCase();
+    let size = mm[2] ? mm[2].toUpperCase() : null;
+    if (size && !SZ[size]) throw new AsmError('Taille inconnue « .' + mm[2] + ' » (utilise .B, .W ou .L)', no);
+    if (!isMnem(op)) throw new AsmError('Instruction inconnue : « ' + mm[1] + ' »', no);
+    const opsStr = takeOperandField(rest.slice(mm[0].length).trim());
+    return { label, op, size, ops: opsStr ? splitOperands(opsStr) : [], no, src: line };
+  }
+
+  /* ---------------- assembleur ---------------- */
+  const ARITY0 = new Set(['NOP', 'RTS', 'RTR', 'RTE', 'RESET', 'TRAPV', 'ILLEGAL', 'SIMHALT']);
+  const ARITY1 = new Set(['CLR', 'NEG', 'NEGX', 'NOT', 'TST', 'EXT', 'SWAP', 'JMP', 'JSR', 'PEA', 'BRA', 'BSR', 'TRAP', 'STOP', 'UNLK', 'TAS']);
+  const SHIFTS = new Set(['ASL', 'ASR', 'LSL', 'LSR', 'ROL', 'ROR', 'ROXL', 'ROXR']);
+  const MEMMODES = new Set(['ind', 'post', 'pre', 'disp', 'idx', 'abs', 'pc']);
+  function defSize(op) {
+    if (['MOVEQ', 'LEA', 'PEA', 'EXG'].includes(op)) return 4;
+    if (op === 'TAS') return 1;
+    const c = ccOf(op); if (c && c.kind === 'S') return 1;
+    return 2;
+  }
+  function estLen(p) {
+    let n = 2;
+    const q = ['MOVEQ', 'ADDQ', 'SUBQ', 'TRAP'].includes(p.op) || SHIFTS.has(p.op);
+    if (p.op === 'MOVEM') n += 2;
+    for (const o of p.opnds) {
+      if (o.m === 'imm' && !q) n += p.s === 4 ? 4 : 2;
+      else if (o.m === 'abs') n += (['BRA', 'BSR'].includes(p.op) || (ccOf(p.op) && ccOf(p.op).kind !== 'S')) ? 2 : 4;
+      else if (['disp', 'idx', 'pc'].includes(o.m)) n += 2;
+    }
+    return n;
+  }
+  function assemble(src, opts = {}) {
+    const lines = src.replace(/\r/g, '').split('\n');
+    const sym = {}; const ins = []; const data = []; const lineAddr = {};
+    let pc = (opts.org ?? 0x1000) >>> 0, pending = [], endExpr = null, start = null;
+    const def = (name, v, no) => {
+      const k = name.toUpperCase();
+      if (Object.prototype.hasOwnProperty.call(sym, k)) throw new AsmError('Étiquette définie deux fois : « ' + name + ' »', no);
+      sym[k] = v;
+    };
+    const flush = () => { for (const [n, no] of pending) def(n, pc, no); pending = []; };
+    for (let i = 0; i < lines.length; i++) {
+      const p = parseLine(lines[i], i + 1);
+      if (!p) continue;
+      if (p.op === 'EQU') { if (!p.label) throw new AsmError('EQU sans étiquette', p.no); def(p.label, evalExpr(p.ops[0], sym, p.no), p.no); continue; }
+      if (p.label && p.op !== 'ORG') pending.push([p.label, p.no]);
+      if (!p.op) continue;
+      if (p.op === 'ORG') { pc = evalExpr(p.ops[0], sym, p.no) >>> 0; if (p.label) pending.push([p.label, p.no]); flush(); continue; }
+      if (p.op === 'END') { flush(); endExpr = p.ops[0] ? [p.ops[0], p.no] : null; break; }
+      if (p.op === 'DC' || p.op === 'DS') {
+        const s = SZ[p.size || 'W']; if (s > 1 && (pc & 1)) pc++;
+        flush(); p.addr = pc; lineAddr[p.no] = pc;
+        if (p.op === 'DS') { p.count = evalExpr(p.ops[0] ?? '', sym, p.no); if (p.count < 0) throw new AsmError('DS négatif', p.no); pc += s * p.count; }
+        else {
+          p.s = s; let n = 0;
+          for (const o of p.ops) {
+            if (/^'.*'$|^".*"$/.test(o)) { const L = o.length - 2; n += Math.ceil(L / s) * s; }
+            else n += s;
+          }
+          p.n = n; data.push(p); pc += n;
+        }
+        continue;
+      }
+      if (pc & 1) pc++;
+      flush();
+      p.addr = pc; lineAddr[p.no] = pc;
+      p.s = p.size ? SZ[p.size] : defSize(p.op);
+      p.opnds = p.ops.map(o => parseOperand(o, p.no));
+      p.len = estLen(p); pc += p.len; ins.push(p);
+      if (start === null) start = p.addr;
+    }
+    flush();
+    const endAddr = pc;
+    const byAddr = new Map(ins.map(x => [x.addr, x]));
+    // passe 2
+    for (const p of ins) {
+      for (const o of p.opnds) if (o.e !== undefined) o.v = evalExpr(o.e, sym, p.no);
+      validate(p, byAddr);
+    }
+    for (const d of data) {
+      const bytes = [];
+      for (const o of d.ops) {
+        if (/^'.*'$|^".*"$/.test(o)) {
+          const str = o.slice(1, -1); for (const ch of str) bytes.push(ch.charCodeAt(0) & 0xFF);
+          while (bytes.length % d.s) bytes.push(0);
+        } else {
+          const v = evalExpr(o, sym, d.no);
+          for (let k = d.s - 1; k >= 0; k--) bytes.push(Math.floor(tr(v, d.s) / Math.pow(256, k)) & 0xFF);
+        }
+      }
+      d.bytes = bytes;
+    }
+    if (endExpr) start = evalExpr(endExpr[0], sym, endExpr[1]) >>> 0;
+    if (opts.entry && sym[opts.entry.toUpperCase()] !== undefined) start = sym[opts.entry.toUpperCase()];
+    if (start === null) start = endAddr;
+    return { ins, data, sym, byAddr, start, endAddr, lineAddr };
+  }
+  function validate(p, byAddr) {
+    const op = p.op, o = p.opnds, n = o.length, E = m => { throw new AsmError(m, p.no); };
+    const cc = ccOf(op);
+    if (['ORG', 'EQU', 'DC', 'DS', 'END'].includes(op)) return;
+    if (ARITY0.has(op) && n !== 0) E(op + ' ne prend pas d\'opérande');
+    else if (ARITY1.has(op) && n !== 1) E(op + ' attend 1 opérande');
+    else if (SHIFTS.has(op)) { if (n < 1 || n > 2) E(op + ' attend 1 ou 2 opérandes'); }
+    else if (cc && cc.kind !== 'DB' && n !== 1) E(op + ' attend 1 opérande');
+    else if (!ARITY0.has(op) && !ARITY1.has(op) && !SHIFTS.has(op) && !(cc && cc.kind !== 'DB') && n !== 2) E(op + ' attend 2 opérandes (source,destination)');
+    if (n === 2 && o[1].m === 'imm') E('Une donnée immédiate ne peut jamais être une destination');
+    if (['ADDQ', 'SUBQ'].includes(op) && (o[0].m !== 'imm' || o[0].v < 1 || o[0].v > 8)) E(op + ' : la donnée immédiate doit être entre 1 et 8');
+    if (op === 'MOVEQ') { if (o[0].m !== 'imm' || o[1].m !== 'dn') E('Syntaxe : MOVEQ #n,Dn'); if (o[0].v < -128 || o[0].v > 255) E('MOVEQ : la donnée doit tenir sur 8 bits signés (−128 à 127)'); }
+    if (op === 'LEA') { if (o[1].m !== 'an') E('LEA : la destination doit être un registre d\'adresse'); if (!MEMMODES.has(o[0].m)) E('LEA : la source doit désigner un emplacement mémoire'); }
+    if (SHIFTS.has(op) && n === 2) {
+      if (o[1].m !== 'dn') E(op + ' : la destination doit être un registre de donnée');
+      if (o[0].m === 'imm' && (o[0].v < 1 || o[0].v > 8)) E(op + ' : le nombre de décalages immédiat doit être entre 1 et 8');
+      if (o[0].m !== 'imm' && o[0].m !== 'dn') E(op + ' : le compteur doit être #n ou Dn');
+    }
+    if (SHIFTS.has(op) && n === 1 && !MEMMODES.has(o[0].m)) E(op + ' sur un registre : précise le nombre (ex : ' + op + '.L #1,D0)');
+    if (n === 2 && o[1].m === 'an' && p.s === 1 && ['MOVE', 'MOVEA', 'ADD', 'SUB', 'CMP', 'ADDA', 'SUBA', 'CMPA'].includes(op)) E('Un registre d\'adresse ne s\'utilise pas en .B');
+    if (['ADDA', 'SUBA', 'CMPA', 'MOVEA'].includes(op) && o[1].m !== 'an') E(op + ' : la destination doit être An');
+    if (cc && cc.kind === 'DB') { if (n !== 2 || o[0].m !== 'dn') E('Syntaxe : ' + op + ' Dn,étiquette'); if (!byAddr.has(o[1].v >>> 0)) E('Cible de ' + op + ' invalide'); }
+    if ((op === 'BRA' || op === 'BSR' || (cc && cc.kind === 'B')) && !byAddr.has(o[0].v >>> 0)) E('Cible de branchement invalide (étiquette d\'une instruction attendue)');
+    if (['EXT', 'SWAP'].includes(op) && o[0].m !== 'dn') E(op + ' fonctionne uniquement sur un registre de donnée');
+    if (op === 'EXT' && p.s === 1) E('EXT : taille .W ou .L');
+    if (['MULU', 'MULS', 'DIVU', 'DIVS'].includes(op) && o[1].m !== 'dn') E(op + ' : la destination doit être Dn');
+    if (op === 'MOVEM') {
+      const isL = x => ['list', 'dn', 'an'].includes(x.m);
+      if (!(isL(o[0]) && MEMMODES.has(o[1].m)) && !(MEMMODES.has(o[0].m) && isL(o[1]))) E('MOVEM : il faut une liste de registres et un emplacement mémoire');
+      if (isL(o[0]) && o[1].m === 'post') E('MOVEM registres → mémoire n\'accepte pas (An)+');
+      if (isL(o[1]) && o[0].m === 'pre') E('MOVEM mémoire → registres n\'accepte pas -(An)');
+      if (p.s === 1) E('MOVEM : taille .W ou .L uniquement');
+    }
+    if (op === 'CLR' && o[0].m === 'an') E('CLR ne fonctionne pas sur An (utilise SUBA.L An,An ou MOVEA.L #0,An)');
+    for (const x of o) {
+      if (x.m === 'disp' && (x.v < -32768 || x.v > 32767)) E('Déplacement hors limites (16 bits signés)');
+      if (x.m === 'idx' && (x.v < -128 || x.v > 127)) E('Déplacement hors limites (8 bits signés avec index)');
+    }
+  }
+
+  /* ---------------- CPU ---------------- */
+  const INIT_SP = 0x00100000;
+  class CPU {
+    constructor() { this.mem = new Uint8Array(0x1000000); this.reset(); }
+    reset() {
+      this.D = [0, 0, 0, 0, 0, 0, 0, 0]; this.A = [0, 0, 0, 0, 0, 0, 0, INIT_SP];
+      this.pc = 0; this.X = this.N = this.Z = this.V = this.C = 0; this.SRhi = 0x27;
+      this.halted = false; this.haltMsg = ''; this.out = ''; this.steps = 0;
+      this.hist = null; this.cur = null; this.trace = null; this.writes = new Set();
+      this.initSP = INIT_SP;
+    }
+    load(prog, clearMem = true) {
+      if (clearMem) this.mem.fill(0);
+      this.reset(); this.prog = prog;
+      for (const d of prog.data) d.bytes.forEach((b, k) => { this.mem[(d.addr + k) & 0xFFFFFF] = b; });
+      this.pc = prog.start;
+    }
+    get ccr() { return (this.X << 4) | (this.N << 3) | (this.Z << 2) | (this.V << 1) | this.C; }
+    set ccr(v) { this.X = (v >> 4) & 1; this.N = (v >> 3) & 1; this.Z = (v >> 2) & 1; this.V = (v >> 1) & 1; this.C = v & 1; }
+    get sr() { return ((this.SRhi << 8) | this.ccr) & 0xFFFF; }
+    rb(a) { a &= 0xFFFFFF; const v = this.mem[a]; if (this.trace) this.trace.push({ t: 'r', a, s: 1, v }); return v; }
+    chk(a, s, w) { if (s > 1 && (a & 1)) throw new RunError(`Erreur d'adresse : ${w ? 'écriture' : 'lecture'} ${s === 2 ? 'd\'un mot (.W)' : 'd\'un mot long (.L)'} à l'adresse impaire ${H(a, 6)}`); }
+    read(a, s) {
+      a &= 0xFFFFFF; this.chk(a, s, false); let v = 0;
+      for (let k = 0; k < s; k++) v = v * 256 + this.mem[(a + k) & 0xFFFFFF];
+      if (this.trace) this.trace.push({ t: 'r', a, s, v });
+      return v >>> 0;
+    }
+    write(a, s, v) {
+      a &= 0xFFFFFF; this.chk(a, s, true); v = tr(v, s);
+      if (this.trace) this.trace.push({ t: 'w', a, s, v });
+      for (let k = s - 1; k >= 0; k--) {
+        const ad = (a + k) & 0xFFFFFF;
+        if (this.hist) this.hist.mem.push([ad, this.mem[ad]]);
+        this.mem[ad] = v & 0xFF; this.writes.add(ad); v = Math.floor(v / 256);
+      }
+    }
+    push(v, s = 4) { this.A[7] = (this.A[7] - s) >>> 0; this.write(this.A[7], s, v); }
+    pop(s = 4) { const v = this.read(this.A[7], s); this.A[7] = (this.A[7] + s) >>> 0; return v; }
+    loc(o, s) {
+      switch (o.m) {
+        case 'dn': return { k: 'd', r: o.r };
+        case 'an': return { k: 'a', r: o.r };
+        case 'imm': return { k: 'i', v: tr(o.v, s) };
+        case 'ind': return { k: 'm', a: this.A[o.r] };
+        case 'post': { const a = this.A[o.r]; this.A[o.r] = (a + ((s === 1 && o.r === 7) ? 2 : s)) >>> 0; return { k: 'm', a }; }
+        case 'pre': { this.A[o.r] = (this.A[o.r] - ((s === 1 && o.r === 7) ? 2 : s)) >>> 0; return { k: 'm', a: this.A[o.r] }; }
+        case 'disp': return { k: 'm', a: (this.A[o.r] + o.v) >>> 0 };
+        case 'idx': { const xr = o.x.t === 'd' ? this.D[o.x.n] : this.A[o.x.n]; return { k: 'm', a: (this.A[o.r] + o.v + (o.xs === 2 ? sx(xr, 2) : (xr | 0))) >>> 0 }; }
+        case 'pc': { let a = o.v; if (o.x) { const xr = o.x.t === 'd' ? this.D[o.x.n] : this.A[o.x.n]; a += o.xs === 2 ? sx(xr, 2) : (xr | 0); } return { k: 'm', a: a >>> 0 }; }
+        case 'abs': return { k: 'm', a: o.v >>> 0 };
+        case 'ccr': return { k: 'ccr' };
+        case 'sr': return { k: 'sr' };
+      }
+      throw new RunError('Mode d\'adressage non supporté ici');
+    }
+    get(L, s) {
+      switch (L.k) {
+        case 'd': return tr(this.D[L.r], s);
+        case 'a': return tr(this.A[L.r], s);
+        case 'i': return L.v;
+        case 'm': return this.read(L.a, s);
+        case 'ccr': return this.ccr;
+        case 'sr': return this.sr;
+      }
+    }
+    put(L, s, v) {
+      v = tr(v, s);
+      if (L.k === 'd') this.D[L.r] = s === 4 ? v : ((this.D[L.r] & ~MASK[s]) | v) >>> 0;
+      else if (L.k === 'a') this.A[L.r] = v >>> 0;
+      else if (L.k === 'm') this.write(L.a, s, v);
+      else if (L.k === 'ccr') this.ccr = v & 0x1F;
+      else if (L.k === 'sr') { this.ccr = v & 0x1F; this.SRhi = (v >> 8) & 0xFF; }
+      else throw new RunError('Destination invalide');
+    }
+    nz(r, s) { this.N = isNeg(r, s) ? 1 : 0; this.Z = tr(r, s) === 0 ? 1 : 0; }
+    logic(r, s) { this.nz(r, s); this.V = 0; this.C = 0; }
+    addf(a, b, s, x = 0, isX = false) {
+      const sum = tr(a, s) + tr(b, s) + x, r = tr(sum, s);
+      this.C = this.X = sum > MASK[s] ? 1 : 0;
+      this.V = (isNeg(a, s) === isNeg(b, s) && isNeg(r, s) !== isNeg(a, s)) ? 1 : 0;
+      this.N = isNeg(r, s) ? 1 : 0;
+      if (isX) { if (r !== 0) this.Z = 0; } else this.Z = r === 0 ? 1 : 0;
+      return r;
+    }
+    subf(d, src, s, x = 0, isCmp = false, isX = false) {
+      const r = tr(tr(d, s) - tr(src, s) - x, s);
+      const C = tr(src, s) + x > tr(d, s) ? 1 : 0;
+      this.C = C; if (!isCmp) this.X = C;
+      this.V = (isNeg(src, s) !== isNeg(d, s) && isNeg(r, s) !== isNeg(d, s)) ? 1 : 0;
+      this.N = isNeg(r, s) ? 1 : 0;
+      if (isX) { if (r !== 0) this.Z = 0; } else this.Z = r === 0 ? 1 : 0;
+      return r;
+    }
+    cond(cc) {
+      const { N, Z, V, C } = this;
+      switch (cc) {
+        case 'T': case 'RA': return true; case 'F': return false;
+        case 'HI': return !C && !Z; case 'LS': return !!(C || Z);
+        case 'CC': case 'HS': return !C; case 'CS': case 'LO': return !!C;
+        case 'NE': return !Z; case 'EQ': return !!Z;
+        case 'VC': return !V; case 'VS': return !!V;
+        case 'PL': return !N; case 'MI': return !!N;
+        case 'GE': return N === V; case 'LT': return N !== V;
+        case 'GT': return !Z && N === V; case 'LE': return !!Z || N !== V;
+      }
+      return false;
+    }
+    target(o) { if (o.m === 'abs' || o.m === 'pc') return o.v >>> 0; const L = this.loc(o, 4); return L.a; }
+    halt(msg) { this.halted = true; this.haltMsg = msg; }
+    snapshot() { return { D: this.D.slice(), A: this.A.slice(), pc: this.pc, ccr: this.ccr, SRhi: this.SRhi, halted: this.halted, haltMsg: this.haltMsg, out: this.out, steps: this.steps, mem: [] }; }
+    step() {
+      if (this.halted) return false;
+      const ins = this.prog.byAddr.get(this.pc >>> 0);
+      if (!ins) {
+        if ((this.pc >>> 0) === this.prog.endAddr) { this.halt('Fin du programme (dernière instruction exécutée).'); return false; }
+        throw new RunError(`Le PC (${H(this.pc)}) ne pointe sur aucune instruction`);
+      }
+      if (this.histOn) { if (!this.histStack) this.histStack = []; this.hist = this.snapshot(); this.histStack.push(this.hist); if (this.histStack.length > 3000) this.histStack.shift(); }
+      this.writes = new Set();
+      this.cur = ins; this.next = (ins.addr + ins.len) >>> 0; this.pc = this.next;
+      try { this.exec(ins); } catch (e) { if (e instanceof RunError && !e.line) e.line = ins.no; throw e; }
+      this.steps++;
+      return true;
+    }
+    back() {
+      if (!this.histStack || !this.histStack.length) return false;
+      const h = this.histStack.pop();
+      for (let i = h.mem.length - 1; i >= 0; i--) this.mem[h.mem[i][0]] = h.mem[i][1];
+      this.D = h.D; this.A = h.A; this.pc = h.pc; this.ccr = h.ccr; this.SRhi = h.SRhi; this.halted = h.halted; this.haltMsg = h.haltMsg; this.out = h.out; this.steps = h.steps;
+      this.hist = null; this.writes = new Set(h.mem.map(x => x[0]));
+      return true;
+    }
+    run(limit = 3000000) {
+      const was = this.histOn; this.histOn = false; this.hist = null;
+      let n = 0;
+      while (!this.halted) {
+        this.step();
+        if (++n >= limit) { this.histOn = was; throw new RunError(`Arrêt après ${limit.toLocaleString('fr-FR')} instructions : boucle infinie ?`, this.cur && this.cur.no); }
+      }
+      this.histOn = was;
+      return n;
+    }
+    trap15() {
+      const t = this.D[0] & 0xFF;
+      const str = (a, len) => { let s = '', k = 0; for (;;) { if (len !== undefined && k >= len) break; const c = this.mem[(a + k) & 0xFFFFFF]; if (len === undefined && c === 0) break; s += String.fromCharCode(c); k++; if (k > 4096) break; } return s; };
+      switch (t) {
+        case 0: this.out += str(this.A[1], this.D[1] & 0xFFFF) + '\n'; break;
+        case 1: this.out += str(this.A[1], this.D[1] & 0xFFFF); break;
+        case 3: this.out += String(this.D[1] | 0); break;
+        case 6: this.out += String.fromCharCode(this.D[1] & 0xFF); break;
+        case 9: this.halt('Arrêt demandé (TRAP #15, tâche 9).'); break;
+        case 13: this.out += str(this.A[1]) + '\n'; break;
+        case 14: this.out += str(this.A[1]); break;
+        case 15: { const b = this.D[2] & 0xFF; this.out += (this.D[1] >>> 0).toString(b >= 2 && b <= 36 ? b : 10).toUpperCase(); break; }
+        default: throw new RunError('TRAP #15 : tâche ' + t + ' non supportée par le simulateur (0,1,3,6,9,13,14,15)');
+      }
+    }
+    exec(p) {
+      const op = p.op, o = p.opnds; let s = p.s;
+      const cc = ccOf(op);
+      switch (op) {
+        case 'NOP': return;
+        case 'SIMHALT': case 'STOP': this.halt('Arrêt du processeur (' + op + ').'); return;
+        case 'TRAP': if ((o[0].v & 15) === 15) this.trap15(); else this.halt('TRAP #' + o[0].v + ' : arrêt.'); return;
+        case 'MOVE': case 'MOVEA': {
+          if (o[1].m === 'ccr' || o[1].m === 'sr') { const v = this.get(this.loc(o[0], 2), 2); this.put(this.loc(o[1], 2), 2, v); return; }
+          if (o[0].m === 'ccr' || o[0].m === 'sr') { const v = this.get(this.loc(o[0], 2), 2); this.put(this.loc(o[1], 2), 2, v); return; }
+          const v = this.get(this.loc(o[0], s), s);
+          if (o[1].m === 'an') { this.A[o[1].r] = s === 2 ? sx(v, 2) >>> 0 : v >>> 0; return; }
+          this.put(this.loc(o[1], s), s, v); this.logic(v, s); return;
+        }
+        case 'MOVEQ': { const v = sx(o[0].v, 1) >>> 0; this.D[o[1].r] = v; this.logic(v, 4); return; }
+        case 'LEA': this.A[o[1].r] = this.loc(o[0], 4).a & 0xFFFFFFFF; this.A[o[1].r] >>>= 0; return;
+        case 'PEA': this.push(this.loc(o[0], 4).a); return;
+        case 'CLR': this.put(this.loc(o[0], s), s, 0); this.N = 0; this.Z = 1; this.V = 0; this.C = 0; return;
+        case 'ADD': case 'ADDI': case 'ADDQ': case 'ADDA': case 'SUB': case 'SUBI': case 'SUBQ': case 'SUBA': {
+          const isAdd = op.startsWith('ADD');
+          if (o[1].m === 'an') {
+            const v = this.get(this.loc(o[0], s), s), e = s === 2 ? sx(v, 2) : (v | 0);
+            this.A[o[1].r] = (this.A[o[1].r] + (isAdd ? e : -e)) >>> 0; return;
+          }
+          const S = this.get(this.loc(o[0], s), s), L = this.loc(o[1], s), Dv = this.get(L, s);
+          this.put(L, s, isAdd ? this.addf(S, Dv, s) : this.subf(Dv, S, s)); return;
+        }
+        case 'ADDX': case 'SUBX': {
+          const S = this.get(this.loc(o[0], s), s), L = this.loc(o[1], s), Dv = this.get(L, s);
+          this.put(L, s, op === 'ADDX' ? this.addf(S, Dv, s, this.X, true) : this.subf(Dv, S, s, this.X, false, true)); return;
+        }
+        case 'CMP': case 'CMPI': case 'CMPA': case 'CMPM': {
+          const S = this.get(this.loc(o[0], s), s);
+          if (o[1].m === 'an') { const e = s === 2 ? sx(S, 2) >>> 0 : S; this.subf(this.A[o[1].r], e, 4, 0, true); return; }
+          const Dv = this.get(this.loc(o[1], s), s); this.subf(Dv, S, s, 0, true); return;
+        }
+        case 'TST': this.logic(this.get(this.loc(o[0], s), s), s); return;
+        case 'NEG': case 'NEGX': { const L = this.loc(o[0], s), v = this.get(L, s); this.put(L, s, this.subf(0, v, s, op === 'NEGX' ? this.X : 0, false, op === 'NEGX')); return; }
+        case 'NOT': { const L = this.loc(o[0], s), r = tr(~this.get(L, s), s); this.put(L, s, r); this.logic(r, s); return; }
+        case 'AND': case 'ANDI': case 'OR': case 'ORI': case 'EOR': case 'EORI': {
+          const S = this.get(this.loc(o[0], o[1].m === 'ccr' ? 1 : s), s);
+          const f = op[0] === 'A' ? (a, b) => a & b : op[0] === 'O' ? (a, b) => a | b : (a, b) => a ^ b;
+          if (o[1].m === 'ccr') { this.ccr = f(this.ccr, S) & 0x1F; return; }
+          if (o[1].m === 'sr') { this.ccr = f(this.ccr, S & 0xFF) & 0x1F; this.SRhi = f(this.SRhi, (S >> 8) & 0xFF); return; }
+          const L = this.loc(o[1], s), r = tr(f(this.get(L, s), S), s); this.put(L, s, r); this.logic(r, s); return;
+        }
+        case 'EXT': { const r = o[0].r; if (s === 2) { const v = sx(this.D[r], 1) & 0xFFFF; this.D[r] = ((this.D[r] & 0xFFFF0000) | v) >>> 0; this.logic(v, 2); } else { this.D[r] = sx(this.D[r], 2) >>> 0; this.logic(this.D[r], 4); } return; }
+        case 'SWAP': { const r = o[0].r, v = this.D[r]; this.D[r] = (((v & 0xFFFF) << 16) | (v >>> 16)) >>> 0; this.logic(this.D[r], 4); return; }
+        case 'EXG': { const g = x => x.m === 'dn' ? this.D[x.r] : this.A[x.r], st = (x, v) => { if (x.m === 'dn') this.D[x.r] = v; else this.A[x.r] = v; }; const a = g(o[0]), b = g(o[1]); st(o[0], b); st(o[1], a); return; }
+        case 'MULU': case 'MULS': {
+          const S = this.get(this.loc(o[0], 2), 2), d = this.D[o[1].r] & 0xFFFF;
+          const r = op === 'MULU' ? (S * d) >>> 0 : (sx(S, 2) * sx(d, 2)) >>> 0;
+          this.D[o[1].r] = r; this.logic(r, 4); return;
+        }
+        case 'DIVU': case 'DIVS': {
+          const S = this.get(this.loc(o[0], 2), 2);
+          if (S === 0) throw new RunError('Division par zéro (exception du 68000)');
+          const dv = this.D[o[1].r];
+          let q, rm;
+          if (op === 'DIVU') { q = Math.floor(dv / S); rm = dv % S; if (q > 0xFFFF) { this.V = 1; this.C = 0; return; } }
+          else { const a = dv | 0, b = sx(S, 2); q = Math.trunc(a / b); rm = a - q * b; if (q < -32768 || q > 32767) { this.V = 1; this.C = 0; return; } }
+          this.D[o[1].r] = (((rm & 0xFFFF) << 16) | (q & 0xFFFF)) >>> 0;
+          this.N = (q & 0x8000) ? 1 : 0; this.Z = (q & 0xFFFF) === 0 ? 1 : 0; this.V = 0; this.C = 0; return;
+        }
+        case 'BTST': case 'BSET': case 'BCLR': case 'BCHG': {
+          const nb = o[0].m === 'imm' ? o[0].v : this.D[o[0].r];
+          const isReg = o[1].m === 'dn', sz = isReg ? 4 : 1, bit = nb & (isReg ? 31 : 7);
+          const L = this.loc(o[1], sz), v = this.get(L, sz), m = (2 ** bit);
+          const was = Math.floor(v / m) & 1; this.Z = was ? 0 : 1;
+          if (op === 'BTST') return;
+          let r = v;
+          if (op === 'BSET' && !was) r = v + m; if (op === 'BCLR' && was) r = v - m; if (op === 'BCHG') r = was ? v - m : v + m;
+          this.put(L, sz, r); return;
+        }
+        case 'BRA': this.pc = o[0].v >>> 0; return;
+        case 'BSR': this.push(this.next); this.pc = o[0].v >>> 0; return;
+        case 'JMP': this.pc = this.target(o[0]); return;
+        case 'JSR': { const t = this.target(o[0]); this.push(this.next); this.pc = t; return; }
+        case 'RTS': if ((this.A[7] >>> 0) >= this.initSP) { this.halt('RTS final : retour à l\'appelant, fin du programme.'); return; } this.pc = this.pop(4); return;
+        case 'RTR': { this.ccr = this.pop(2) & 0x1F; this.pc = this.pop(4); return; }
+        case 'RTE': this.halt('RTE : arrêt.'); return;
+        case 'LINK': { this.push(this.A[o[0].r]); this.A[o[0].r] = this.A[7]; this.A[7] = (this.A[7] + sx(o[1].v, 2)) >>> 0; return; }
+        case 'UNLK': { this.A[7] = this.A[o[0].r]; this.A[o[0].r] = this.pop(4); return; }
+        case 'MOVEM': {
+          const isL = x => ['list', 'dn', 'an'].includes(x.m);
+          const toMem = isL(o[0]);
+          const R = toMem ? o[0] : o[1], M = toMem ? o[1] : o[0];
+          const mask = R.m === 'list' ? R.mask : (R.m === 'dn' ? 1 << R.r : 1 << (8 + R.r));
+          const getR = i => (i < 8 ? this.D[i] : this.A[i - 8]), setR = (i, v) => { if (i < 8) this.D[i] = v >>> 0; else this.A[i - 8] = v >>> 0; };
+          if (toMem) {
+            if (M.m === 'pre') { let a = this.A[M.r]; for (let i = 15; i >= 0; i--) if (mask & (1 << i)) { a = (a - s) >>> 0; this.write(a, s, tr(getR(i), s)); } this.A[M.r] = a; }
+            else { let a = this.loc(M, s).a; for (let i = 0; i < 16; i++) if (mask & (1 << i)) { this.write(a, s, tr(getR(i), s)); a = (a + s) >>> 0; } }
+          } else {
+            let a = M.m === 'post' ? this.A[M.r] : this.loc(M, s).a;
+            for (let i = 0; i < 16; i++) if (mask & (1 << i)) { const v = this.read(a, s); setR(i, s === 2 ? sx(v, 2) : v); a = (a + s) >>> 0; }
+            if (M.m === 'post') this.A[M.r] = a;
+          }
+          return;
+        }
+        case 'TAS': { const L = this.loc(o[0], 1), v = this.get(L, 1); this.logic(v, 1); this.put(L, 1, v | 0x80); return; }
+        case 'CHK': case 'ILLEGAL': case 'RESET': case 'TRAPV': case 'ABCD': case 'SBCD': this.halt(op + ' non simulé : arrêt.'); return;
+      }
+      if (SHIFTS.has(op)) return this.shift(p);
+      if (cc) {
+        if (cc.kind === 'B') { if (this.cond(cc.cc)) this.pc = o[0].v >>> 0; return; }
+        if (cc.kind === 'DB') {
+          if (this.cond(cc.cc)) return;
+          const r = o[0].r, w = ((this.D[r] & 0xFFFF) - 1) & 0xFFFF;
+          this.D[r] = ((this.D[r] & 0xFFFF0000) | w) >>> 0;
+          if (w !== 0xFFFF) this.pc = o[1].v >>> 0; return;
+        }
+        if (cc.kind === 'S') { this.put(this.loc(o[0], 1), 1, this.cond(cc.cc) ? 0xFF : 0); return; }
+      }
+      throw new RunError('Instruction ' + op + ' non supportée par le simulateur');
+    }
+    shift(p) {
+      const op = p.op, o = p.opnds; let s = p.s, cnt, L;
+      if (o.length === 1) { s = 2; L = this.loc(o[0], 2); cnt = 1; }
+      else { cnt = o[0].m === 'imm' ? o[0].v : (this.D[o[0].r] & 63); L = this.loc(o[1], s); }
+      let v = this.get(L, s); const msb = MSB[s]; let C = 0, Vf = 0;
+      if (cnt === 0) C = (op === 'ROXL' || op === 'ROXR') ? this.X : 0;
+      for (let i = 0; i < cnt; i++) {
+        const top = (v & msb) !== 0 ? 1 : 0, low = v & 1;
+        switch (op) {
+          case 'LSL': case 'ASL': { C = top; const nv = tr(v * 2, s); if (op === 'ASL' && (((nv & msb) !== 0) ? 1 : 0) !== top) Vf = 1; v = nv; this.X = C; break; }
+          case 'LSR': C = low; v = v >>> 1; this.X = C; break;
+          case 'ASR': C = low; v = ((v >>> 1) | (top ? msb : 0)) >>> 0; this.X = C; break;
+          case 'ROL': C = top; v = tr(v * 2 + top, s); break;
+          case 'ROR': C = low; v = ((v >>> 1) | (low ? msb : 0)) >>> 0; break;
+          case 'ROXL': C = top; v = tr(v * 2 + this.X, s); this.X = C; break;
+          case 'ROXR': C = low; v = ((v >>> 1) | (this.X ? msb : 0)) >>> 0; this.X = C; break;
+        }
+        v = tr(v, s);
+      }
+      this.put(L, s, v); this.nz(v, s); this.V = op === 'ASL' ? Vf : 0; this.C = C;
+    }
+  }
+
+  /* ---------------- utilitaires publics ---------------- */
+  function runSource(src, setup = {}, opts = {}) {
+    const prog = assemble(src, opts);
+    const cpu = new CPU(); cpu.load(prog);
+    if (setup.D) setup.D.forEach((v, i) => { if (v !== undefined && v !== null) cpu.D[i] = v >>> 0; });
+    if (setup.A) setup.A.forEach((v, i) => { if (v !== undefined && v !== null) cpu.A[i] = v >>> 0; });
+    if (setup.mem) for (const [a, bytes] of setup.mem) bytes.forEach((b, k) => { cpu.mem[(a + k) & 0xFFFFFF] = b & 0xFF; });
+    if (setup.trace) cpu.trace = [];
+    cpu.run(opts.limit);
+    return cpu;
+  }
+  // forme canonique d'une instruction (pour corriger des réponses texte)
+  function canon(text) {
+    try {
+      const p = parseLine(' ' + text.trim(), 1); if (!p || !p.op) return null;
+      let op = p.op; const c = ccOf(op);
+      if (op === 'DBRA') op = 'DBF';
+      if (op === 'BHS') op = 'BCC'; if (op === 'BLO') op = 'BCS';
+      if (op === 'MOVEA') op = 'MOVE'; if (op === 'ADDA') op = 'ADD'; if (op === 'SUBA') op = 'SUB';
+      if (c && c.kind === 'DB' && c.cc === 'HS') op = 'DBCC';
+      const s = p.size ? SZ[p.size] : defSize(op);
+      const ops = p.ops.map(x => {
+        const q = parseOperand(x, 1);
+        if (q.m === 'list') return 'L' + q.mask;
+        if (q.m === 'dn' && op === 'MOVEM') return 'L' + (1 << q.r);
+        if (q.m === 'an' && op === 'MOVEM') return 'L' + (1 << (8 + q.r));
+        if (q.e !== undefined) { try { q.v = evalExpr(q.e, {}, 1); } catch (e) { q.v = q.e.toUpperCase(); } delete q.e; }
+        if (q.m === 'idx' && !q.xs) q.xs = 2;
+        return JSON.stringify(q);
+      });
+      return op + '.' + s + ' ' + ops.join(',');
+    } catch (e) { return null; }
+  }
+  return { isMnem, assemble, CPU, AsmError, RunError, runSource, evalExpr, parseLine, parseOperand, canon, H, hexs, tr, sx, isNeg, MASK, MSB, INIT_SP, ccOf, CCS, SHIFTS };
+})();
+if (typeof module !== 'undefined') module.exports = M68K;
+/* ==========================================================================
+   LABO-68K — Générateurs d'exercices (format du contrôle S3) + défis moulinette
+   ========================================================================== */
+const GEN = (function () {
+  'use strict';
+  const M = M68K;
+  const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const hx = (v, n) => (v >>> 0).toString(16).toUpperCase().padStart(n, '0');
+  const SZN = { 1: 'B', 2: 'W', 4: 'L' };
+  const SN = { B: 1, W: 2, L: 4 };
+  const ah = v => '$' + hx(v, (v >>> 0) > 0xFFFF ? 6 : 4);
+  const rnd32 = () => Math.floor(Math.random() * 4294967296) >>> 0;
+  const sgn = v => (v < 0 ? '− ' + (-v) : '+ ' + v);
+
+  /* ================= EXERCICE 1 : modes d'adressage ================= */
+  function ex1State() {
+    const base = pick([0x2000, 0x3000, 0x4000, 0x5000, 0x6000, 0x7000]);
+    const d0 = Math.random() < 0.6 ? (-rnd(1, 9)) >>> 0 : rnd(2, 9);
+    const d1 = rnd(1, 9);
+    const hiw = pick([0x4444, 0x1111, 0x2222, 0x7777, 0xAAAA, 0x5555, rnd(0x1000, 0xEFFF)]);
+    const d2 = ((hiw * 0x10000) + (Math.random() < 0.6 ? 0x10000 - rnd(2, 12) : rnd(2, 12))) >>> 0;
+    const mem = Array.from({ length: 24 }, () => rnd(0, 255));
+    return { D: [d0 >>> 0, d1, d2], A: [base, base + 8, base + 16], base, mem };
+  }
+  function imm(st, s) {
+    const r = Math.random();
+    if (s === 'B') return r < 0.5 ? '#' + rnd(10, 99) : '#$' + hx(rnd(0, 255), 2);
+    if (s === 'W') return r < 0.45 ? '#' + rnd(10, 999) : '#$' + hx(rnd(0, 0xFFFF), 4);
+    return r < 0.4 ? '#$' + hx(st.base + rnd(0, 23), 4) : '#$' + hx(rnd32(), 8);
+  }
+  const absA = st => '$' + hx(st.base + rnd(0, 22), 4);
+  const TPL1 = [
+    (st, s) => `MOVE.${s} ${imm(st, s)},-(A${rnd(1, 2)})`,
+    (st, s) => `MOVE.${s} ${absA(st)},${rnd(-8, 10)}(A${rnd(0, 2)})`,
+    (st, s) => `MOVE.${s} ${imm(st, s)},(A${rnd(0, 2)})+`,
+    (st, s) => `MOVE.${s} ${rnd(-9, 9)}(A${rnd(0, 2)}),${rnd(-6, 6)}(A${rnd(0, 2)},D${rnd(0, 1)}.${pick(['W', 'L'])})`,
+    (st, s) => `MOVE.${s} (A${rnd(0, 2)})+,${rnd(-8, 8)}(A${rnd(0, 2)})`,
+    (st, s) => `MOVE.${s} -(A${rnd(1, 2)}),(A${rnd(0, 2)})+`,
+    (st, s) => `MOVE.${s} D${rnd(0, 2)},${rnd(-6, 6)}(A${rnd(0, 2)},D${rnd(0, 2)}.W)`,
+    (st, s) => { const a = rnd(1, 2); return `MOVE.${s} -(A${a}),-(A${a})`; },
+    (st, s) => `MOVE.${s} ${rnd(-8, 10)}(A${rnd(0, 2)}),D${rnd(0, 2)}`,
+    (st, s) => `MOVE.${s} ${absA(st)},D${rnd(0, 2)}`,
+    (st, s) => `MOVE.${s} (A${rnd(0, 2)}),${absA(st)}`,
+    (st, s) => `CLR.${s} ${rnd(-8, 10)}(A${rnd(0, 2)})`,
+    (st, s) => `MOVE.${s} D${rnd(0, 2)},-(A${rnd(1, 2)})`,
+    (st, s) => `MOVE.${s} ${rnd(-4, 4)}(A${rnd(0, 2)},D1.W),(A${rnd(0, 2)})`,
+    (st, s) => `MOVE.${s} ${rnd(-6, 6)}(A${rnd(0, 2)},D0.L),(A${rnd(0, 2)})+`,
+    (st) => `MOVEA.W ${rnd(-8, 10)}(A${rnd(0, 2)}),A${rnd(0, 2)}`,
+    (st) => `LEA ${rnd(-8, 8)}(A${rnd(0, 2)},D${rnd(0, 1)}.L),A${rnd(0, 2)}`,
+  ];
+  function setupOf(st, trace) { return { D: st.D, A: st.A, mem: [[st.base, st.mem]], trace }; }
+  function genEx1(st) {
+    st = st || ex1State();
+    for (let tries = 0; tries < 400; tries++) {
+      const t = pick(TPL1);
+      const s = pick(['B', 'W', 'W', 'L', 'L']);
+      const ins = t(st, s);
+      try {
+        const cpu = M.runSource(' ' + ins, setupOf(st, true));
+        const okMem = cpu.trace.every(e => e.a >= st.base && e.a + e.s <= st.base + 24);
+        if (!okMem) continue;
+        const res = solve1(st, ins, cpu);
+        if (!res.changed) continue;
+        return { st, ins, res };
+      } catch (e) { /* invalide (adresse impaire, etc.) → on retire */ }
+    }
+    return { st, ins: 'MOVE.W #52,(A0)+', res: solve1(st, 'MOVE.W #52,(A0)+') };
+  }
+  function solve1(st, ins, cpu) {
+    cpu = cpu || M.runSource(' ' + ins, setupOf(st, false));
+    const mem = Array.from(cpu.mem.slice(st.base, st.base + 24));
+    const D = cpu.D.slice(0, 3), A = cpu.A.slice(0, 3);
+    const regChanged = [];
+    D.forEach((v, i) => { if (v !== st.D[i]) regChanged.push('D' + i); });
+    A.forEach((v, i) => { if (v !== st.A[i]) regChanged.push('A' + i); });
+    const memChanged = mem.map((b, i) => b !== st.mem[i]);
+    return { mem, D, A, regChanged, memChanged, changed: regChanged.length > 0 || memChanged.some(Boolean) };
+  }
+  function explain1(st, ins) {
+    const prog = M.assemble(' ' + ins); const p = prog.ins[0];
+    const cpu = new M.CPU(); cpu.load(prog);
+    st.D.forEach((v, i) => cpu.D[i] = v); st.A.forEach((v, i) => cpu.A[i] = v);
+    st.mem.forEach((b, k) => cpu.mem[st.base + k] = b);
+    const sz = p.op === 'LEA' ? 4 : p.s;
+    const out = [];
+    const single = p.opnds.length === 1;
+    p.opnds.forEach((o, i) => {
+      const A = cpu.A, D = cpu.D;
+      const chain = [p.ops[i].toUpperCase()]; let note = '';
+      switch (o.m) {
+        case 'imm': chain.push('#$' + hx(M.tr(o.v, sz), sz * 2)); if (!/^\$/.test(o.e.trim())) note = `${o.e.trim()} en décimal = $${hx(M.tr(o.v, sz), sz * 2)} sur ${sz * 8} bits`; break;
+        case 'dn': chain.push(`D${o.r}.${SZN[sz]}`); break;
+        case 'an': chain.push(`A${o.r}`); break;
+        case 'ind': chain.push(`(${ah(A[o.r])})`); break;
+        case 'post': chain.push(`(A${o.r})`, `(${ah(A[o.r])})`); note = `Après l'accès : A${o.r} = ${ah(A[o.r])} + ${sz} = ${ah(A[o.r] + sz)}`; break;
+        case 'pre': chain.push(`(A${o.r} − ${sz})`, `(${ah(A[o.r])} − ${sz})`, `(${ah(A[o.r] - sz)})`); note = `A${o.r} est décrémenté AVANT l'accès : A${o.r} = ${ah(A[o.r] - sz)}`; break;
+        case 'disp': chain.push(`(A${o.r} ${sgn(o.v)})`, `(${ah(A[o.r])} ${sgn(o.v)})`, `(${ah(A[o.r] + o.v)})`); break;
+        case 'idx': {
+          const xr = o.x.t === 'd' ? D[o.x.n] : A[o.x.n];
+          const xv = o.xs === 2 ? M.sx(xr, 2) : (xr | 0);
+          const xn = (o.x.t === 'd' ? 'D' : 'A') + o.x.n + '.' + (o.xs === 2 ? 'W' : 'L');
+          chain.push(`(A${o.r} + ${xn} ${sgn(o.v)})`, `(${ah(A[o.r])} ${sgn(xv)} ${sgn(o.v)})`, `(${ah(A[o.r] + xv + o.v)})`);
+          note = `${xn} = $${hx(M.tr(xr, o.xs), o.xs * 2)} = ${xv} en signé (l'index est TOUJOURS signé)`;
+          break;
+        }
+        case 'abs': chain.push(`(${ah(o.v)})`); break;
+      }
+      const L = cpu.loc(o, sz);
+      const isSrc = i === 0 && !single;
+      if (isSrc && p.op !== 'LEA' && L.k !== 'i') { const v = cpu.get(L, sz); chain.push('#$' + hx(v, sz * 2)); }
+      if (p.op === 'LEA' && i === 0) { chain.push('adresse ' + ah(L.a)); note = 'LEA charge l\'ADRESSE effective, sans lire la mémoire'; }
+      out.push({ label: single ? 'Destination' : (i === 0 ? 'Source' : 'Destination'), chain, note });
+    });
+    if (p.op === 'MOVEA' && p.s === 2) out.push({ label: 'Attention', chain: ['MOVEA.W étend le signe sur 32 bits avant d\'écrire dans An'], note: '' });
+    return out;
+  }
+
+  /* ================= EXERCICE 2 : additions et flags ================= */
+  function operand(s) {
+    const m = M.MASK[s], msb = M.MSB[s], r = Math.random();
+    if (r < 0.18) return msb - 1 - rnd(0, 3);
+    if (r < 0.34) return msb + rnd(0, 15);
+    if (r < 0.44) return m - rnd(0, 3);
+    if (r < 0.52) return rnd(1, 15);
+    if (s === 4 && r < 0.8) { const d = () => pick('0123456789ABCDEF'.split('')); const z = pick(['0', '1', '9', 'F']); return parseInt(d() + z + d() + z + d() + z + d() + z, 16) >>> 0; }
+    if (s === 2 && r < 0.7) { return parseInt(pick(['00', '7F', '80', 'FF', '0F', 'F0', '40', 'C0']) + hx(rnd(0, 255), 2), 16); }
+    return Math.floor(Math.random() * (m + 1)) >>> 0;
+  }
+  function genEx2(withSub) {
+    const s = pick([1, 1, 2, 2, 4, 4]);
+    const op = withSub && Math.random() < 0.4 ? 'SUB' : 'ADD';
+    const a = operand(s), b = operand(s);
+    return solve2(op, a, b, s);
+  }
+  function solve2(op, a, b, s) {
+    const cpu = new M.CPU();
+    const r = op === 'ADD' ? cpu.addf(b, a, s) : cpu.subf(a, b, s);
+    return { op, a, b, s, r, N: cpu.N, Z: cpu.Z, V: cpu.V, C: cpu.C, text: `$${hx(a, s * 2)} ${op === 'ADD' ? '+' : '−'} $${hx(b, s * 2)}` };
+  }
+  function explain2(q) {
+    const { a, b, s, r } = q, bits = s * 8, max = M.MASK[s], lo = -(2 ** (bits - 1)), hi = 2 ** (bits - 1) - 1;
+    const sa = M.sx(a, s), sb = M.sx(b, s), sr = M.sx(r, s);
+    const L = [];
+    if (q.op === 'ADD') {
+      const us = a + b;
+      L.push(`<b>Non signé</b> : ${a} + ${b} = ${us} ${us > max ? `&gt; ${max} → retenue, <b>C = 1</b>` : `≤ ${max} → pas de retenue, <b>C = 0</b>`}`);
+      const ss = sa + sb;
+      L.push(`<b>Signé</b> : (${sa}) + (${sb}) = ${ss} ${ss < lo || ss > hi ? `hors de [${lo} ; ${hi}] → <b>V = 1</b>` : `dans [${lo} ; ${hi}] → <b>V = 0</b>`}`);
+      const pa = sa >= 0, pb = sb >= 0;
+      if (pa === pb) L.push(`Astuce : deux nombres ${pa ? 'positifs' : 'négatifs'} → V = 1 seulement si le résultat est ${pa ? 'négatif' : 'positif'}.`);
+      else L.push('Astuce : un positif + un négatif ne peut JAMAIS déborder → V = 0 d\'office.');
+    } else {
+      L.push(`<b>Non signé</b> : ${a} − ${b} ${b > a ? '→ emprunt, <b>C = 1</b>' : '→ pas d\'emprunt, <b>C = 0</b>'}`);
+      const ss = sa - sb;
+      L.push(`<b>Signé</b> : (${sa}) − (${sb}) = ${ss} ${ss < lo || ss > hi ? '→ <b>V = 1</b>' : '→ <b>V = 0</b>'}`);
+    }
+    L.push(`Résultat sur ${bits} bits : <b>$${hx(r, s * 2)}</b> → bit de poids fort = ${q.N} → <b>N = ${q.N}</b>, ${r === 0 ? 'nul → <b>Z = 1</b>' : 'non nul → <b>Z = 0</b>'}`);
+    return L;
+  }
+
+  /* ================= EXERCICE 3 : questions de cours ================= */
+  const listTxt = (t, a, b) => (b - a >= 1 ? `${t}${a}-${t}${b}` : `${t}${a}`);
+  const QGEN = [
+    () => { const r = pick(['D', 'A']) + rnd(0, 6), s = pick(['W', 'L']); return { q: `Quelle instruction permet d'empiler le registre ${r} sur ${s === 'W' ? 16 : 32} bits ?`, type: 'ins', ans: [`MOVE.${s} ${r},-(A7)`, `MOVEM.${s} ${r},-(A7)`], show: `MOVE.${s} ${r},-(A7)`, why: 'Empiler = pré-décrémenter A7 puis écrire : mode -(A7). La taille (.W/.L) est celle demandée.' }; },
+    () => { const r = pick(['D', 'A']) + rnd(0, 6), s = pick(['W', 'L']); return { q: `Quelle instruction permet de dépiler le registre ${r} sur ${s === 'W' ? 16 : 32} bits ?`, type: 'ins', ans: [`MOVE.${s} (A7)+,${r}`, `MOVEM.${s} (A7)+,${r}`], show: `MOVE.${s} (A7)+,${r}`, why: 'Dépiler = lire à A7 puis post-incrémenter : mode (A7)+.' }; },
+    () => { const t = pick(['A', 'D']), a = rnd(0, 4), b = a + rnd(1, 3); const s = pick(['W', 'L']); return { q: `Quelle instruction permet de dépiler les registres ${Array.from({ length: b - a + 1 }, (_, k) => t + (a + k)).join(', ')} sur ${s === 'W' ? 16 : 32} bits ?`, type: 'ins', ans: [`MOVEM.${s} (A7)+,${listTxt(t, a, b)}`], show: `MOVEM.${s} (A7)+,${listTxt(t, a, b)}`, why: 'Plusieurs registres → MOVEM. L\'ordre de la liste n\'a aucune importance : D0-D3/A1 = A1/D3/D2/D1/D0.' }; },
+    () => { const a = rnd(0, 3), b = a + rnd(1, 3), c = rnd(0, 5); const s = pick(['W', 'L']); return { q: `Quelle instruction permet d'empiler les registres D${a} à D${b} et A${c} sur ${s === 'W' ? 16 : 32} bits ?`, type: 'ins', ans: [`MOVEM.${s} D${a}-D${b}/A${c},-(A7)`], show: `MOVEM.${s} D${a}-D${b}/A${c},-(A7)`, why: 'MOVEM vers -(A7). Le 68000 empile dans l\'ordre inversé (A7…A0, D7…D0) pour que le dépilage dans l\'ordre classique rende les bonnes valeurs.' }; },
+    () => ({ q: 'Quelle instruction permet d\'appeler un sous-programme ?', type: 'text', ans: ['BSR', 'JSR', 'BSR OU JSR', 'JSR OU BSR', 'BSR/JSR', 'JSR/BSR'], show: 'BSR (ou JSR)', why: 'BSR/JSR empilent l\'adresse de retour (32 bits) puis sautent au sous-programme.' }),
+    () => ({ q: 'Quelle instruction permet de sortir d\'un sous-programme ?', type: 'text', ans: ['RTS'], show: 'RTS', why: 'RTS dépile l\'adresse de retour et la charge dans le PC.' }),
+    () => ({ q: 'Quel registre contient l\'adresse de la prochaine instruction à exécuter ?', type: 'text', ans: ['PC', 'LEPC', 'COMPTEURPROGRAMME', 'PROGRAMCOUNTER'], show: 'PC', why: 'Le compteur programme (Program Counter).' }),
+    () => ({ q: 'Quel registre est le pointeur de pile ?', type: 'text', ans: ['A7', 'SP', 'A7SP', 'SPA7'], show: 'A7 (alias SP)', why: 'A7 = SSP en mode superviseur, USP en mode utilisateur.' }),
+    () => ({ q: 'Quel flag indique un dépassement en arithmétique SIGNÉE ?', type: 'text', ans: ['V'], show: 'V (Overflow)', why: 'V = deux positifs donnant un négatif, ou deux négatifs donnant un positif.' }),
+    () => ({ q: 'Quel flag indique une retenue (dépassement NON signé) ?', type: 'text', ans: ['C'], show: 'C (Carry)', why: 'C = 1 si l\'addition non signée dépasse la taille.' }),
+    () => ({ q: 'Quel flag recopie le bit de poids fort du résultat ?', type: 'text', ans: ['N'], show: 'N (Negative)', why: 'N = bit de signe du résultat.' }),
+    () => ({ q: 'Quel registre de 8 bits contient X, N, Z, V et C et reste accessible en mode utilisateur ?', type: 'text', ans: ['CCR'], show: 'CCR', why: 'Le CCR = les 8 bits de poids faible du SR.' }),
+    () => { const n = rnd(2, 40); return { q: `Avec D7.W = ${n} au départ, combien de fois s'exécute le corps d'une boucle terminée par DBRA D7,LOOP ?`, type: 'num', ans: [n + 1], show: String(n + 1), why: 'DBRA décrémente puis boucle tant que D7.W ≠ −1 : n + 1 tours.' }; },
+    () => { const n = rnd(2, 20), s = pick(['B', 'W', 'L']); return { q: `Combien d'octets réserve la directive DS.${s} ${n} ?`, type: 'num', ans: [n * SN[s]], show: String(n * SN[s]), why: `.${s} = ${SN[s]} octet(s) × ${n}.` }; },
+    () => { const r = rnd(0, 7); return { q: `Quelle instruction échange les 16 bits de poids fort et de poids faible de D${r} ?`, type: 'ins', ans: [`SWAP D${r}`], show: `SWAP D${r}`, why: 'SWAP travaille uniquement sur un registre de donnée.' }; },
+    () => { const r = rnd(0, 7); return { q: `Quelle instruction étend le signe de D${r}.W sur 32 bits ?`, type: 'ins', ans: [`EXT.L D${r}`], show: `EXT.L D${r}`, why: 'EXT.W : octet → mot. EXT.L : mot → mot long.' }; },
+    () => { const r = rnd(0, 7); return { q: `Quelle instruction met D${r} à zéro sur 32 bits ?`, type: 'ins', ans: [`CLR.L D${r}`, `MOVEQ #0,D${r}`, `MOVE.L #0,D${r}`], show: `CLR.L D${r}`, why: 'CLR.L (ou MOVEQ #0, plus rapide).' }; },
+    () => ({ q: 'Après CMP.L D0,D1, quelle instruction branche à NEXT si D1 > D0 en comparaison NON signée ?', type: 'ins', ans: ['BHI NEXT'], show: 'BHI NEXT', why: 'Non signé : HI / HS / LO / LS. Signé : GT / GE / LT / LE. CMP src,dst compare dst à src.' }),
+    () => ({ q: 'Après CMP.W D0,D1, quelle instruction branche à NEXT si D1 > D0 en comparaison SIGNÉE ?', type: 'ins', ans: ['BGT NEXT'], show: 'BGT NEXT', why: 'GT = Greater Than (signé).' }),
+    () => ({ q: 'Après CMP.B D0,D1, quelle instruction branche à NEXT si D1 ≤ D0 en comparaison NON signée ?', type: 'ins', ans: ['BLS NEXT'], show: 'BLS NEXT', why: 'LS = Lower or Same (non signé).' }),
+    () => ({ q: 'Après CMP.L D0,D1, quelle instruction branche à NEXT si D1 < D0 en comparaison SIGNÉE ?', type: 'ins', ans: ['BLT NEXT'], show: 'BLT NEXT', why: 'LT = Less Than (signé).' }),
+    () => ({ q: 'Quelle directive indique l\'adresse à partir de laquelle le code est assemblé ?', type: 'text', ans: ['ORG'], show: 'ORG', why: 'ORG n\'est pas une instruction : elle ne produit aucun code machine.' }),
+    () => ({ q: 'Quelle directive place des constantes en mémoire ?', type: 'text', ans: ['DC'], show: 'DC (Define Constant)', why: 'DS réserve, DC remplit.' }),
+    () => ({ q: 'Quelle directive réserve de l\'espace mémoire sans l\'initialiser ?', type: 'text', ans: ['DS'], show: 'DS (Define Storage)', why: 'DS.W 3 réserve 6 octets.' }),
+    () => ({ q: 'Quelle directive attribue une valeur à une étiquette ?', type: 'text', ans: ['EQU'], show: 'EQU', why: 'MAX EQU 17 : l\'assembleur remplace MAX par 17.' }),
+    () => ({ q: 'MOVEM.L D0/A4,-(A0) : quel registre est copié en premier ?', type: 'text', ans: ['A4'], show: 'A4', why: 'Avec -(An), MOVEM utilise l\'ordre inversé : A7…A0 puis D7…D0.' }),
+    () => ({ q: 'Après MOVE.B D0,-(A7), de combien d\'octets A7 a-t-il diminué ?', type: 'num', ans: [2], show: '2', why: 'Piège : la pile reste alignée sur des mots. Un octet empilé via A7 décrémente de 2.' }),
+    () => ({ q: 'Combien de fils d\'adresse considère-t-on pour le 68000 dans le cours ?', type: 'num', ans: [24], show: '24', why: '24 fils → 16 Mio adressables. Les 8 bits de poids fort de An sont ignorés.' }),
+    () => ({ q: 'Peut-on lire un mot (.W) à une adresse impaire ? (oui/non)', type: 'text', ans: ['NON', 'N', 'NO'], show: 'Non', why: 'Mots et mots longs : adresse paire obligatoire, sinon erreur d\'adresse. Les octets : n\'importe où.' }),
+    () => ({ q: 'Combien d\'opérandes au maximum pour une instruction 68000 ?', type: 'num', ans: [2], show: '2', why: 'Source à gauche, destination à droite.' }),
+    () => ({ q: 'Quel est le nombre minimal d\'octets d\'une instruction en mémoire ?', type: 'num', ans: [2], show: '2', why: 'Une instruction = au moins 1 mot de 16 bits, au plus 5 mots (10 octets).' }),
+    () => { const r = rnd(0, 6), s = pick(['B', 'W', 'L']); return { q: `MOVE.${s} D0,(A${r})+ : de combien A${r} est-il incrémenté ?`, type: 'num', ans: [SN[s]], show: String(SN[s]), why: '.B → +1, .W → +2, .L → +4 (sauf A7 en .B : +2).' }; },
+    () => ({ q: 'Quelle instruction charge l\'adresse de l\'étiquette TAB dans A0 ?', type: 'ins', ans: ['LEA TAB,A0', 'MOVEA.L #TAB,A0', 'MOVE.L #TAB,A0'], show: 'LEA TAB,A0', why: 'LEA = Load Effective Address. MOVE ne peut pas avoir An en destination (il faut MOVEA).' }),
+    () => ({ q: 'Quel flag est le seul modifié par BTST ?', type: 'text', ans: ['Z'], show: 'Z', why: 'Z = NOT(bit testé).' }),
+    () => ({ q: 'Quelle valeur de MOVEQ est permise ? Donne la valeur maximale.', type: 'num', ans: [127], show: '127', why: 'MOVEQ : donnée 8 bits signée (−128 à 127), étendue sur 32 bits.' }),
+  ];
+  const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[\s.'’"]/g, '').replace(/^LE|^LA/, '');
+  function genEx3() { const g = pick(QGEN)(); return g; }
+  function check3(q, input) {
+    const t = (input || '').trim();
+    if (!t) return false;
+    if (q.type === 'num') {
+      let v; try { v = M.evalExpr(t.replace(/\s/g, ''), {}, 0); } catch (e) { return false; }
+      return q.ans.includes(v);
+    }
+    if (q.type === 'ins') {
+      const c = M.canon(t.replace(/\bSP\b/gi, 'A7'));
+      return !!c && q.ans.some(a => M.canon(a) === c);
+    }
+    const n = norm(t);
+    return q.ans.some(a => norm(a) === n);
+  }
+
+  /* ================= EXERCICE 4 : traçage de programme ================= */
+  const CCS1 = ['GT', 'GE', 'LT', 'LE', 'HI', 'HS', 'LO', 'LS', 'EQ', 'NE', 'PL', 'MI'];
+  const SIGNED = ['GT', 'GE', 'LT', 'LE'];
+  const ROT_OPS = [
+    () => `ror.w #${pick([4, 8])},d4`, () => `ror.l #${pick([4, 8])},d4`, () => `rol.l #${pick([4, 8])},d4`, () => `rol.w #${pick([4, 8])},d4`,
+    () => 'swap d4', () => `rol.b #4,d4`, () => `ror.b #4,d4`, () => `lsl.w #${pick([4, 8])},d4`, () => `lsr.l #${pick([4, 8])},d4`,
+    () => 'not.b d4', () => 'ext.w d4', () => `asr.w #4,d4`, () => 'swap d4', () => `lsl.l #4,d4`,
+  ];
+  function genEx4() {
+    const d7 = rnd32();
+    const s1 = pick(['W', 'W', 'B', 'L']);
+    const cc = pick(CCS1);
+    const immv = s1 === 'B' ? pick([0x70, 0x80, 0x10, 0x7F, 0xF0, 0x40]) : s1 === 'W' ? pick([0x7000, 0x8000, 0x1000, 0xC000, 0x0400, 0x7FFF]) : pick([0x40000000, 0x80000000, 0x10000000, 0x7FFFFFFF]);
+    const p1 = rnd(1, 4), p2 = p1 + rnd(1, 4);
+    // partie 2
+    const s2 = Math.random() < 0.75 ? 'b' : 'w';
+    let n2;
+    if (s2 === 'b') n2 = Math.random() < 0.15 ? pick([256, 512, 768]) : rnd(257, 900);
+    else n2 = Math.random() < 0.5 ? rnd(65537, 66000) : rnd(3, 400);
+    const n2txt = Math.random() < 0.5 ? String(n2) : '$' + hx(n2, 0);
+    // partie 3
+    const lw = Math.random() < 0.15 ? 0xFFFF : Math.random() < 0.3 ? 0 : rnd(0x10, 0xFFFE);
+    const v3 = ((rnd(0, 0xFFFF) * 0x10000) + lw) >>> 0;
+    const v3txt = Math.random() < 0.25 && lw < 30000 ? String(lw) : '$' + hx(v3, 8);
+    const v3real = /^\$/.test(v3txt) ? v3 : lw;
+    // partie 4
+    const hexd = '0123456789ABCDEF'.split('').sort(() => Math.random() - 0.5).slice(0, 8).join('');
+    const nops = rnd(4, 6); const ops4 = []; for (let k = 0; k < nops; k++) ops4.push(pick(ROT_OPS)());
+    const prog = [
+      `Main     move.l  #$${hx(d7, 8)},d7`,
+      `part1    moveq.l #${p1},d1`,
+      `         cmp.${s1.toLowerCase()}   #$${hx(immv, SN[s1] * 2)},d7`,
+      `         b${cc.toLowerCase()}     part2`,
+      `         moveq.l #${p2},d1`,
+      `part2    clr.l   d2`,
+      `         move.l  #${n2txt},d0`,
+      `loop2    addq.l  #1,d2`,
+      `         subq.${s2}  #1,d0`,
+      `         bne     loop2`,
+      `part3    clr.l   d3`,
+      `         move.l  #${v3txt},d0`,
+      `loop3    addq.l  #1,d3`,
+      `         dbra    d0,loop3      ; DBRA = DBF`,
+      `part4    move.l  #$${hexd},d4`,
+      ...ops4.map(x => `         ${x}`),
+    ].join('\n');
+    const cpu = M.runSource(prog);
+    const ans = [cpu.D[1], cpu.D[2], cpu.D[3], cpu.D[4]];
+    // explication
+    const sz = SN[s1], dv = M.tr(d7, sz), iv = M.tr(immv, sz);
+    const tmp = new M.CPU(); tmp.subf(dv, iv, sz, 0, true); const taken = tmp.cond(cc);
+    const signed = SIGNED.includes(cc);
+    const ex = [];
+    ex.push({ t: 'D1', lines: [
+      `CMP.${s1} #$${hx(iv, sz * 2)},D7 compare <b>D7.${s1} = $${hx(dv, sz * 2)}</b> à $${hx(iv, sz * 2)} (D7.${s1} − $${hx(iv, sz * 2)}).`,
+      signed ? `B${cc} est <b>signé</b> : ${M.sx(dv, sz)} vs ${M.sx(iv, sz)}.` : (['HI', 'HS', 'LO', 'LS'].includes(cc) ? `B${cc} est <b>non signé</b> : ${dv} vs ${iv}.` : `B${cc} teste un flag : N=${tmp.N} Z=${tmp.Z} V=${tmp.V} C=${tmp.C}.`),
+      `Condition ${taken ? 'VRAIE → saut à part2, D1 garde ' + p1 : 'FAUSSE → pas de saut, MOVEQ #' + p2 + ' s\'exécute'} → <b>D1 = $${hx(ans[0], 8)}</b>`,
+    ] });
+    const m2 = s2 === 'b' ? 0xFF : 0xFFFF, c2 = (n2 & m2) || (m2 + 1);
+    ex.push({ t: 'D2', lines: [
+      `${n2txt} = $${hx(n2, 0)} → SUBQ.${s2.toUpperCase()} ne regarde que D0.${s2.toUpperCase()} = $${hx(n2 & m2, s2 === 'b' ? 2 : 4)}.`,
+      (n2 & m2) === 0 ? `D0.${s2.toUpperCase()} = 0 : le premier SUBQ donne $${s2 === 'b' ? 'FF' : 'FFFF'} (≠ 0) → on fait le tour complet : ${m2 + 1} tours.` : `La boucle tourne ${c2} fois (on sort quand D0.${s2.toUpperCase()} atteint 0).`,
+      `<b>D2 = $${hx(ans[1], 8)}</b> (${c2} en décimal)`,
+    ] });
+    const lw3 = v3real & 0xFFFF;
+    ex.push({ t: 'D3', lines: [
+      `DBRA ne regarde que D0.W = $${hx(lw3, 4)} = ${lw3}.`,
+      `Le corps s'exécute D0.W + 1 = ${lw3 + 1} fois${lw3 === 0xFFFF ? ' ($FFFF = 65535 : 65536 tours, piège classique)' : ''}.`,
+      `<b>D3 = $${hx(ans[2], 8)}</b>`,
+    ] });
+    // trace partie 4
+    const p4 = M.assemble(` move.l #$${hexd},d4\n` + ops4.map(x => ' ' + x).join('\n'));
+    const c4 = new M.CPU(); c4.load(p4); const tl = [];
+    while (!c4.halted) { const before = c4.pc; if (!c4.step()) break; const ins = p4.byAddr.get(before); tl.push(`${ins.op.padEnd(5)}${ins.size ? '.' + ins.size : ''} ${ins.ops.join(',')} → D4 = $${hx(c4.D[4], 8)}`); }
+    ex.push({ t: 'D4', lines: tl.map(x => `<code>${x.toUpperCase()}</code>`).concat(['Rappel : une rotation .B/.W ne touche que l\'octet / le mot de poids faible. 1 chiffre hexa = 4 bits.']) });
+    return { prog, ans, ex };
+  }
+
+  /* ================= DÉFIS MOULINETTE ================= */
+  const strBytes = s => [...s].map(c => c.charCodeAt(0)).concat([0]);
+  const garbage = () => rnd32();
+  const words = ['bonjour', 'EPITA', 'kayak', 'radar', 'assembleur', 'Motorola 68000', 'abc', '', 'x', 'Hello World', 'laval', 'S3 archi', 'ressasser'];
+  const CH = [
+    { id: 'abs', name: 'Valeur absolue', lvl: 1, entry: 'Abs', out: ['D0'],
+      txt: 'Remplace D0.L (signé) par sa valeur absolue. Tous les autres registres doivent être conservés.',
+      tpl: 'Abs\n        ; D0.L = |D0.L|\n\n        rts',
+      tests: () => [5, -5, 0, -1, 2147483647, -2147483647, rnd(-100000, 100000)].map(v => ({ name: `Abs(${v})`, D: { 0: v >>> 0 }, exp: { D0: Math.abs(v) >>> 0 } })) },
+    { id: 'max', name: 'Maximum signé', lvl: 1, entry: 'Max', out: ['D0'],
+      txt: 'D0.L ← le plus grand de D1.L et D2.L, en comparaison SIGNÉE. D1 et D2 sont conservés.',
+      tpl: 'Max\n        ; D0.L = max(D1.L, D2.L) signé\n\n        rts',
+      tests: () => [[3, 9], [9, 3], [-4, 2], [2, -4], [-7, -8], [5, 5], [0x7FFFFFFF, -1]].map(([a, b]) => ({ name: `Max(${a}, ${b})`, D: { 1: a >>> 0, 2: b >>> 0 }, exp: { D0: Math.max(a, b) >>> 0 } })) },
+    { id: 'strlen', name: 'StrLen', lvl: 2, entry: 'StrLen', out: ['D0'],
+      txt: 'A0 pointe sur une chaîne terminée par un octet nul. Renvoie sa longueur dans D0.L. A0 doit être conservé (utilise un autre registre ou sauvegarde-le).',
+      tpl: 'StrLen\n        ; A0 = adresse de la chaîne\n        ; D0.L = longueur\n\n        rts',
+      tests: () => words.slice(0, 8).map(w => ({ name: `StrLen("${w}")`, A: { 0: 0x3000 }, mem: [[0x3000, strBytes(w)]], exp: { D0: w.length } })) },
+    { id: 'sum', name: 'Somme d\'un tableau', lvl: 2, entry: 'Sum',
+      out: ['D0'], txt: 'A0 pointe sur un tableau de mots SIGNÉS (16 bits), D1.W contient le nombre d\'éléments (≥ 1). Renvoie la somme sur 32 bits dans D0.L. A0 et D1 conservés.',
+      tpl: 'Sum\n        ; A0 = tableau de .W signés, D1.W = taille\n        ; D0.L = somme\n\n        rts',
+      tests: () => [[1, 2, 3], [-5, 5, -10], [32767, 32767], [-32768], Array.from({ length: 10 }, () => rnd(-1000, 1000))].map(t => ({ name: `Sum([${t.join(',')}])`, A: { 0: 0x3000 }, D: { 1: t.length }, mem: [[0x3000, t.flatMap(v => [(v >> 8) & 255, v & 255])]], exp: { D0: t.reduce((a, b) => a + b, 0) >>> 0 } })) },
+    { id: 'popcnt', name: 'Bits à 1', lvl: 2, entry: 'BitCount', out: ['D1'],
+      txt: 'Compte le nombre de bits à 1 de D0.L et le renvoie dans D1.L. D0 doit être conservé. (Indice : LSR/BTST et le flag C.)',
+      tpl: 'BitCount\n        ; D1.L = nombre de bits à 1 dans D0.L\n\n        rts',
+      tests: () => [0, 1, 0xFFFFFFFF, 0x80000000, 0x12345678, rnd32()].map(v => ({ name: `BitCount($${hx(v, 8)})`, D: { 0: v }, exp: { D1: v.toString(2).split('').filter(c => c === '1').length } })) },
+    { id: 'bswap', name: 'Inverser les octets', lvl: 2, entry: 'ByteSwap', out: ['D0'],
+      txt: 'Inverse l\'ordre des 4 octets de D0.L : $11223344 devient $44332211. (Indice : ROR.W, SWAP.)',
+      tpl: 'ByteSwap\n        ; D0.L : $AABBCCDD -> $DDCCBBAA\n\n        rts',
+      tests: () => [0x11223344, 0xAABBCCDD, 0, 0x000000FF, rnd32()].map(v => ({ name: `ByteSwap($${hx(v, 8)})`, D: { 0: v }, exp: { D0: parseInt(hx(v, 8).match(/../g).reverse().join(''), 16) >>> 0 } })) },
+    { id: 'upper', name: 'Majuscules', lvl: 2, entry: 'ToUpper', out: [],
+      txt: 'A0 pointe sur une chaîne terminée par 0. Convertis en place les lettres a-z en A-Z (le reste ne change pas). Tous les registres conservés.',
+      tpl: 'ToUpper\n        ; A0 = chaîne à convertir en place\n\n        rts',
+      tests: () => ['bonjour', 'EPITA s3', 'motorola 68000!', 'aZ{`', ''].map(w => ({ name: `ToUpper("${w}")`, A: { 0: 0x3000 }, mem: [[0x3000, strBytes(w)]], expMem: [[0x3000, strBytes(w.replace(/[a-z]/g, c => c.toUpperCase()))]] })) },
+    { id: 'count', name: 'Compter un caractère', lvl: 2, entry: 'CountChar', out: ['D0'],
+      txt: 'A0 pointe sur une chaîne terminée par 0, D1.B contient un caractère. Renvoie dans D0.L le nombre d\'occurrences de ce caractère.',
+      tpl: 'CountChar\n        ; A0 = chaîne, D1.B = caractère\n        ; D0.L = nombre d\'occurrences\n\n        rts',
+      tests: () => [['assembleur', 's'], ['kayak', 'k'], ['EPITA', 'z'], ['', 'a'], ['aaaa', 'a']].map(([w, c]) => ({ name: `CountChar("${w}", '${c}')`, A: { 0: 0x3000 }, D: { 1: (0xABCDEF00 | c.charCodeAt(0)) >>> 0 }, mem: [[0x3000, strBytes(w)]], exp: { D0: [...w].filter(x => x === c).length } })) },
+    { id: 'fact', name: 'Factorielle', lvl: 3, entry: 'Fact', out: ['D0'],
+      txt: 'D0.W contient n (0 ≤ n ≤ 9). Renvoie n! dans D0.L. Piège : MULU multiplie deux MOTS de 16 bits. Multiplie dans l\'ordre croissant (1×2×…×n) : 8! = 40320 tient encore sur 16 bits, 9×8×7×6×5×4×3 non.',
+      tpl: 'Fact\n        ; D0.W = n, D0.L = n!\n\n        rts',
+      tests: () => [0, 1, 2, 5, 7, 9].map(n => ({ name: `Fact(${n})`, D: { 0: (0x12340000 | n) >>> 0 }, exp: { D0: [1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880][n] } })) },
+    { id: 'pal', name: 'Palindrome', lvl: 3, entry: 'IsPal', out: ['D0'],
+      txt: 'A0 pointe sur une chaîne terminée par 0. D0.L ← 1 si c\'est un palindrome, 0 sinon. (La chaîne vide est un palindrome.)',
+      tpl: 'IsPal\n        ; A0 = chaîne\n        ; D0.L = 1 si palindrome, sinon 0\n\n        rts',
+      tests: () => ['kayak', 'radar', 'EPITA', 'ab', 'a', '', 'ressasser', 'abca'].map(w => ({ name: `IsPal("${w}")`, A: { 0: 0x3000 }, mem: [[0x3000, strBytes(w)]], exp: { D0: w === [...w].reverse().join('') ? 1 : 0 } })) },
+    { id: 'strcpy', name: 'Copie de chaîne', lvl: 3, entry: 'StrCpy', out: [],
+      txt: 'Copie la chaîne pointée par A0 (terminée par 0, octet nul compris) vers l\'adresse A1. A0 et A1 doivent être conservés.',
+      tpl: 'StrCpy\n        ; A0 = source, A1 = destination\n\n        rts',
+      tests: () => ['Hello', 'EPITA S3', '', 'Motorola'].map(w => ({ name: `StrCpy("${w}")`, A: { 0: 0x3000, 1: 0x3800 }, mem: [[0x3000, strBytes(w)], [0x3800, [0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55]]], expMem: [[0x3800, strBytes(w)]] })) },
+    { id: 'atoi', name: 'Atoi', lvl: 3, entry: 'Atoi', out: ['D0'],
+      txt: 'A0 pointe sur une chaîne de chiffres décimaux terminée par 0 (valeur ≤ 999999). Renvoie la valeur dans D0.L. (×10 = ×8 + ×2, ou MULU tant que ça tient.)',
+      tpl: 'Atoi\n        ; A0 = "1234",0  ->  D0.L = 1234\n\n        rts',
+      tests: () => ['0', '7', '42', '1234', '65535', '999999', String(rnd(100, 99999))].map(w => ({ name: `Atoi("${w}")`, A: { 0: 0x3000 }, mem: [[0x3000, strBytes(w)]], exp: { D0: parseInt(w, 10) } })) },
+  ];
+  function runChallenge(ch, src) {
+    const report = []; let passed = 0;
+    let prog;
+    try { prog = M.assemble(src, { entry: ch.entry }); }
+    catch (e) { return { fatal: `Erreur d'assemblage ligne ${e.line ?? '?'} : ${e.message}`, line: e.line, report, passed: 0, total: 0 }; }
+    if (prog.sym[ch.entry.toUpperCase()] === undefined) return { fatal: `L'étiquette « ${ch.entry} » est introuvable : la moulinette appelle JSR ${ch.entry}.`, report, passed: 0, total: 0 };
+    const tests = ch.tests();
+    for (const t of tests) {
+      const cpu = new M.CPU(); cpu.load(prog);
+      const init = { D: [], A: [] };
+      for (let i = 0; i < 8; i++) { init.D[i] = t.D && t.D[i] !== undefined ? t.D[i] : garbage(); }
+      for (let i = 0; i < 7; i++) { init.A[i] = t.A && t.A[i] !== undefined ? t.A[i] : (0x00400000 + rnd(0, 0xFFFF) * 2) >>> 0; }
+      cpu.D = init.D.map(v => v >>> 0); for (let i = 0; i < 7; i++) cpu.A[i] = init.A[i] >>> 0;
+      (t.mem || []).forEach(([a, bytes]) => bytes.forEach((b, k) => cpu.mem[a + k] = b));
+      let err = null;
+      try { cpu.run(2000000); } catch (e) { err = (e.line ? `ligne ${e.line} : ` : '') + e.message; }
+      if (!err && !/^RTS final/.test(cpu.haltMsg)) err = 'le programme ne se termine pas par RTS (' + cpu.haltMsg + ')';
+      const fails = [];
+      if (!err) {
+        for (const [r, v] of Object.entries(t.exp || {})) { const got = r[0] === 'D' ? cpu.D[+r[1]] : cpu.A[+r[1]]; if ((got >>> 0) !== (v >>> 0)) fails.push(`${r} attendu $${hx(v, 8)} (${v | 0}), obtenu $${hx(got, 8)} (${got | 0})`); }
+        for (const [a, bytes] of (t.expMem || [])) { const got = Array.from(cpu.mem.slice(a, a + bytes.length)); if (got.join() !== bytes.join()) fails.push(`mémoire en $${hx(a, 4)} : attendu ${bytes.map(b => hx(b, 2)).join(' ')}, obtenu ${got.map(b => hx(b, 2)).join(' ')}`); }
+        const keep = []; for (let i = 0; i < 8; i++) keep.push('D' + i); for (let i = 0; i < 7; i++) keep.push('A' + i);
+        for (const r of keep) { if (ch.out.includes(r)) continue; const got = r[0] === 'D' ? cpu.D[+r[1]] : cpu.A[+r[1]], was = r[0] === 'D' ? init.D[+r[1]] : init.A[+r[1]]; if ((got >>> 0) !== (was >>> 0)) fails.push(`${r} a été modifié ($${hx(was, 8)} → $${hx(got, 8)}) : sauvegarde-le avec MOVEM.L ...,-(A7) / MOVEM.L (A7)+,...`); }
+        if ((cpu.A[7] >>> 0) !== M.INIT_SP) fails.push('pile déséquilibrée (A7 ne revient pas à sa valeur de départ)');
+      }
+      const ok = !err && !fails.length; if (ok) passed++;
+      report.push({ name: t.name, ok, msg: err || fails.join(' · '), steps: cpu.steps });
+    }
+    return { report, passed, total: tests.length };
+  }
+
+  /* ================= EXAMEN BLANC ================= */
+  function genExam() {
+    const st = ex1State(); const e1 = []; const seen = new Set();
+    while (e1.length < 4) { const g = genEx1(st); if (seen.has(g.ins)) continue; seen.add(g.ins); e1.push(g); }
+    const e2 = [solve2('ADD', ...[operand(1), operand(1)], 1), solve2('ADD', operand(1), operand(1), 1), solve2('ADD', operand(2), operand(2), 2), solve2('ADD', operand(4), operand(4), 4)];
+    const pool = QGEN.slice(); const e3 = [];
+    const fixed = [0, 2, 4, 6]; fixed.forEach(i => e3.push(pool[i]()));
+    if (Math.random() < 0.5) e3[2] = QGEN[5](); if (Math.random() < 0.5) e3[0] = QGEN[3]();
+    const e4 = genEx4();
+    return { st, e1, e2, e3, e4 };
+  }
+
+  return { rnd, pick, hx, ah, ex1State, genEx1, solve1, explain1, genEx2, solve2, explain2, genEx3, check3, QGEN, genEx4, CH, runChallenge, genExam };
+})();
+if (typeof module !== 'undefined') module.exports = GEN;
+/* ==========================================================================
+   LABO-68K — Interface
+   ========================================================================== */
+(function () {
+  'use strict';
+  const M = M68K, G = GEN, hx = G.hx, ah = G.ah;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const app = $('#app');
+
+  /* ================= état persistant ================= */
+  const EXS = ['ex1', 'ex2', 'ex3', 'ex4'];
+  const DEF = () => ({ xp: 0, combo: 0, best: 0, st: { ex1: { ok: 0, tot: 0, rec: [] }, ex2: { ok: 0, tot: 0, rec: [] }, ex3: { ok: 0, tot: 0, rec: [] }, ex4: { ok: 0, tot: 0, rec: [] } }, solved: {}, code: {}, exams: [], badges: [], day: { last: null, n: 0 }, acc: 'blue', snd: false, labo: null, ran: false });
+  let S = DEF();
+  try { const raw = localStorage.getItem('labo68k'); if (raw) S = Object.assign(DEF(), JSON.parse(raw)); } catch (e) { }
+  const save = () => { try { localStorage.setItem('labo68k', JSON.stringify(S)); } catch (e) { } };
+
+  /* ================= niveaux & badges ================= */
+  const LV = [[0, 'Octet errant'], [80, 'Bit de signe'], [200, 'Registre D0'], [400, 'Pointeur de pile'], [700, 'Maître du CCR'], [1100, 'Dompteur de DBRA'], [1600, 'Briseur de moulinette'], [2300, 'Architecte 68k'], [3200, 'Légende du 20/20']];
+  const lvOf = xp => { let i = 0; while (i + 1 < LV.length && xp >= LV[i + 1][0]) i++; return i; };
+  const BADGES = [
+    ['first', '1ST', 'Premier sang', 'Première bonne réponse'],
+    ['c5', '×5', 'Série ×5', '5 bonnes réponses d\'affilée'],
+    ['c12', '×12', 'Inarrêtable', '12 d\'affilée'],
+    ['ea', 'EA', 'Sniper d\'adresses', '10 bonnes en Ex.1'],
+    ['fl', 'NZVC', 'Maître des flags', '10 bonnes en Ex.2'],
+    ['crs', 'RTS', 'Par cœur', '15 bonnes en Ex.3'],
+    ['trc', 'DBF', 'Traceur', '8 bonnes en Ex.4'],
+    ['lab', 'PC', 'Premier run', 'Exécuter un programme au Labo'],
+    ['m1', 'OK', 'Moulinette verte', 'Un défi à 100 %'],
+    ['m6', '6/12', 'Mi-parcours', '6 défis réussis'],
+    ['mall', 'ALL', 'Moulinette brisée', 'Tous les défis réussis'],
+    ['e16', '16+', 'Mention', 'Examen blanc ≥ 16/20'],
+    ['e20', '20', 'Le 20/20', 'Examen blanc parfait'],
+    ['d3', '3J', 'Régulier', '3 jours d\'entraînement d\'affilée'],
+  ];
+  function grant(id) {
+    if (S.badges.includes(id)) return;
+    S.badges.push(id); save();
+    const b = BADGES.find(x => x[0] === id);
+    toast(`<b>Badge débloqué · ${esc(b[2])}</b><br><span class="sub">${esc(b[3])}</span>`);
+    sfx('badge'); confetti(60);
+  }
+  function checkBadges() {
+    const st = S.st;
+    if (EXS.some(k => st[k].ok > 0)) grant('first');
+    if (S.combo >= 5) grant('c5'); if (S.combo >= 12) grant('c12');
+    if (st.ex1.ok >= 10) grant('ea'); if (st.ex2.ok >= 10) grant('fl'); if (st.ex3.ok >= 15) grant('crs'); if (st.ex4.ok >= 8) grant('trc');
+    const ns = Object.keys(S.solved).length;
+    if (ns >= 1) grant('m1'); if (ns >= 6) grant('m6'); if (ns >= G.CH.length) grant('mall');
+    if (S.day.n >= 3) grant('d3');
+  }
+  function touchDay() {
+    const d = new Date(); const today = d.toISOString().slice(0, 10);
+    if (S.day.last === today) return;
+    const y = new Date(d - 864e5).toISOString().slice(0, 10);
+    S.day.n = S.day.last === y ? S.day.n + 1 : 1; S.day.last = today;
+  }
+  function award(ex, ok, base = 10, el, silent) {
+    touchDay();
+    const s = S.st[ex];
+    if (s) { s.tot++; if (ok) s.ok++; s.rec.push(ok ? 1 : 0); if (s.rec.length > 12) s.rec.shift(); }
+    if (silent) { save(); return; }
+    const lv0 = lvOf(S.xp);
+    if (ok) {
+      S.combo++; S.best = Math.max(S.best, S.combo);
+      const mult = S.combo >= 10 ? 3 : S.combo >= 5 ? 2 : 1;
+      const gain = base * mult; S.xp += gain;
+      popAt(el, `+${gain} XP${mult > 1 ? ' ×' + mult : ''}`);
+      sfx('ok');
+      if (S.combo === 5 || S.combo === 10) toast(`<b>Combo ×${S.combo}</b> · l'XP est multipliée par ${S.combo >= 10 ? 3 : 2}`);
+    } else { if (S.combo >= 3) toast(`Série de ${S.combo} interrompue. On repart.`); S.combo = 0; sfx('ko'); }
+    save(); hud(); checkBadges();
+    if (lvOf(S.xp) > lv0) { const L = LV[lvOf(S.xp)]; toast(`<b>Niveau ${lvOf(S.xp) + 1} · ${esc(L[1])}</b>`); confetti(140); sfx('lvl'); }
+  }
+  function hud() {
+    const i = lvOf(S.xp), cur = LV[i][0], nxt = LV[i + 1] ? LV[i + 1][0] : cur + 1000;
+    $('#lvnum').textContent = i + 1; $('#lvname').textContent = LV[i][1] + ' · ' + S.xp + ' XP';
+    $('#xpbar').style.width = Math.min(100, (S.xp - cur) / (nxt - cur) * 100) + '%';
+    const c = $('#combo'); c.textContent = '×' + S.combo; c.classList.toggle('hot', S.combo >= 3);
+    $('#sndbtn').style.color = S.snd ? 'var(--acc)' : ''; $('#sndbtn').setAttribute('aria-label', S.snd ? 'Couper le son' : 'Activer le son');
+    $$('.sw').forEach(b => b.classList.toggle('on', b.dataset.acc === S.acc));
+  }
+  function readiness() {
+    const W = { ex1: 6, ex2: 4, ex3: 4, ex4: 6 }; let est = 0;
+    const per = {};
+    for (const k of EXS) { const r = S.st[k].rec; const acc = r.length ? r.reduce((a, b) => a + b, 0) / r.length : 0; const conf = Math.min(1, r.length / 6); per[k] = { acc, conf, n: r.length }; est += W[k] * acc * conf; }
+    return { est: Math.round(est * 2) / 2, per };
+  }
+
+  /* ================= effets ================= */
+  function toast(html, ms = 3600) { const t = document.createElement('div'); t.className = 'toast'; t.innerHTML = html; $('#toasts').appendChild(t); setTimeout(() => t.remove(), ms); }
+  function popAt(el, txt) {
+    const p = document.createElement('div'); p.className = 'pop'; p.textContent = txt;
+    const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0 };
+    p.style.left = (r.left + r.width / 2) + 'px'; p.style.top = (r.top - 10) + 'px';
+    document.body.appendChild(p); setTimeout(() => p.remove(), 1200);
+  }
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const cv = $('#confetti'), cx = cv.getContext('2d'); let parts = [], raf = null;
+  function confetti(n = 90) {
+    if (reduce) return;
+    cv.width = innerWidth * devicePixelRatio; cv.height = innerHeight * devicePixelRatio;
+    const col = [getComputedStyle(document.documentElement).getPropertyValue('--acc').trim(), '#E3EBF9', '#3BD69C', '#FFC24D'];
+    for (let i = 0; i < n; i++) parts.push({ x: innerWidth / 2 + (Math.random() - .5) * 200, y: innerHeight * .35, vx: (Math.random() - .5) * 14, vy: -Math.random() * 13 - 4, r: Math.random() * 5 + 3, c: col[i % col.length], a: Math.random() * 6, life: 0, hex: Math.random() < .35 ? (Math.random() < .5 ? '$' + hx(Math.random() * 256 | 0, 2) : '1') : null });
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+  function tick() {
+    cx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0); cx.clearRect(0, 0, innerWidth, innerHeight);
+    parts.forEach(p => { p.vy += .35; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.a += .15; p.life++; cx.globalAlpha = Math.max(0, 1 - p.life / 120); cx.fillStyle = p.c; if (p.hex) { cx.font = '700 12px JetBrains Mono, monospace'; cx.fillText(p.hex, p.x, p.y); } else { cx.save(); cx.translate(p.x, p.y); cx.rotate(p.a); cx.fillRect(-p.r / 2, -p.r / 4, p.r, p.r / 2); cx.restore(); } });
+    parts = parts.filter(p => p.life < 120 && p.y < innerHeight + 40);
+    if (parts.length) raf = requestAnimationFrame(tick); else { raf = null; cx.clearRect(0, 0, innerWidth, innerHeight); }
+  }
+  let ac = null;
+  function sfx(kind) {
+    if (!S.snd) return;
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      const seq = { ok: [[660, .06], [990, .09]], ko: [[220, .12]], badge: [[523, .07], [659, .07], [784, .07], [1046, .14]], lvl: [[392, .08], [523, .08], [659, .08], [784, .18]] }[kind] || [[440, .05]];
+      let t = ac.currentTime;
+      for (const [f, d] of seq) { const o = ac.createOscillator(), g = ac.createGain(); o.type = kind === 'ko' ? 'sawtooth' : 'square'; o.frequency.value = f; g.gain.setValueAtTime(.05, t); g.gain.exponentialRampToValueAtTime(.0001, t + d); o.connect(g).connect(ac.destination); o.start(t); o.stop(t + d); t += d * .9; }
+    } catch (e) { }
+  }
+  function shake(el) { if (!el) return; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
+
+  /* ================= coloration syntaxique ================= */
+  function commentIdx(l) { if (/^\s*\*/.test(l)) return l.indexOf('*'); let q = null; for (let i = 0; i < l.length; i++) { const c = l[i]; if (q) { if (c === q) q = null; } else if (c === "'" || c === '"') q = c; else if (c === ';') return i; } return -1; }
+  function hlOps(s) {
+    let out = '', last = 0; const re = /('[^']*'?)|(\$[0-9A-Fa-f]+|%[01]+|\b\d+\b)|\b(D[0-7]|A[0-7]|SP|PC|SR|CCR)(\.[WLwl])?\b/gi; let m;
+    while ((m = re.exec(s))) {
+      out += esc(s.slice(last, m.index));
+      if (m[1]) out += `<span class="t-str">${esc(m[1])}</span>`;
+      else if (m[2]) out += `<span class="t-num">${esc(m[2])}</span>`;
+      else out += `<span class="t-reg">${esc(m[0])}</span>`;
+      last = re.lastIndex;
+    }
+    return out + esc(s.slice(last));
+  }
+  function hl(line) {
+    const ci = commentIdx(line); const code = ci < 0 ? line : line.slice(0, ci), com = ci < 0 ? '' : line.slice(ci);
+    let out = '', rest = code; let m;
+    if ((m = /^([A-Za-z_.][\w.]*:?)/.exec(code)) && !M.isMnem(m[1].replace(':', ''))) { out += `<span class="t-lab">${esc(m[1])}</span>`; rest = code.slice(m[1].length); }
+    if ((m = /^(\s*)([A-Za-z]+(?:\.[A-Za-z])?)/.exec(rest))) { out += esc(m[1]) + `<span class="t-mn">${esc(m[2])}</span>`; rest = rest.slice(m[0].length); }
+    out += hlOps(rest);
+    if (com) out += `<span class="t-com">${esc(com)}</span>`;
+    return out;
+  }
+  const listing = src => `<div class="listing">${src.split('\n').map(hl).join('\n')}</div>`;
+
+  /* ================= éditeur ================= */
+  function makeEditor(host, code, opt = {}) {
+    host.innerHTML = `<div class="ed"><div class="gut"></div><div class="edw"><pre aria-hidden="true"></pre><textarea id="${opt.id || 'ed'}" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="Code assembleur 68000"></textarea></div></div>`;
+    const ta = $('textarea', host), pre = $('pre', host), gut = $('.gut', host);
+    const bps = opt.bps || new Set(); let marks = {};
+    ta.value = code;
+    function render() {
+      const lines = ta.value.split('\n');
+      pre.innerHTML = lines.map((l, i) => `<span class="ln${marks.cur === i + 1 ? ' cur' : ''}${marks.err === i + 1 ? ' err' : ''}">${hl(l) || ' '}</span>`).join('\n') + '\n\n';
+      gut.innerHTML = lines.map((_, i) => `<div class="${bps.has(i + 1) ? 'bp' : ''}" data-l="${i + 1}" title="Point d'arrêt">${i + 1}</div>`).join('') + '<div></div><div></div>';
+      sync();
+    }
+    function sync() { pre.scrollTop = ta.scrollTop; pre.scrollLeft = ta.scrollLeft; gut.scrollTop = ta.scrollTop; }
+    ta.addEventListener('input', () => { marks.err = null; render(); opt.onChange && opt.onChange(ta.value); });
+    ta.addEventListener('scroll', sync);
+    ta.addEventListener('keydown', e => {
+      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); const s = ta.selectionStart; ta.setRangeText('\t', s, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input')); }
+      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) { // auto-indentation
+        e.preventDefault(); const s = ta.selectionStart; const ls = ta.value.lastIndexOf('\n', s - 1) + 1; const line = ta.value.slice(ls, s);
+        const ind = /^\S/.test(line) && line.trim() ? '\t' : (line.match(/^\s*/)[0] || '\t');
+        ta.setRangeText('\n' + ind, s, ta.selectionEnd, 'end'); ta.dispatchEvent(new Event('input'));
+      }
+      opt.onKey && opt.onKey(e);
+    });
+    gut.addEventListener('click', e => { const l = +e.target.dataset.l; if (!l) return; bps.has(l) ? bps.delete(l) : bps.add(l); render(); opt.onBp && opt.onBp(bps); });
+    render();
+    return {
+      get value() { return ta.value; }, set value(v) { ta.value = v; render(); },
+      mark(m) { marks = m || {}; render(); if (marks.cur || marks.err) { const l = marks.cur || marks.err; const top = (l - 1) * 21; if (top < ta.scrollTop || top > ta.scrollTop + ta.clientHeight - 60) { ta.scrollTop = top - 80; sync(); } } },
+      bps, ta, focus() { ta.focus(); }
+    };
+  }
+
+  /* ================= routeur ================= */
+  const routes = { home: pageHome, guide: pageGuide, ex1: pageEx1, ex2: pageEx2, ex3: pageEx3, ex4: pageEx4, labo: pageLabo, moulinette: pageMoul, exam: pageExam };
+  let cleanup = null; let keyHandler = null;
+  function go() {
+    const r = (location.hash || '#home').slice(1);
+    const page = routes[r] ? r : 'home';
+    if (cleanup) { cleanup(); cleanup = null; } keyHandler = null;
+    $$('#tabs a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + page));
+    const on = $('#tabs a.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
+    routes[page]();
+    window.scrollTo(0, 0);
+  }
+  addEventListener('hashchange', go);
+  document.addEventListener('keydown', e => { if (keyHandler) keyHandler(e); });
+  const typing = e => /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
+
+  /* ================= ACCUEIL ================= */
+  const DEMO = `Main	move.l	#$52A59382,d7
+	cmp.w	#$7000,d7	; signé !
+	bgt	part2
+	moveq.l	#2,d1
+part2	move.l	#260,d0	; = $104
+loop2	addq.l	#1,d2
+	subq.b	#1,d0	; D0.B = $04
+	bne	loop2
+part4	move.l	#$12345678,d4
+	ror.w	#4,d4
+	ror.l	#8,d4
+	swap	d4
+	rol.b	#4,d4
+	ror.l	#8,d4`;
+  function pageHome() {
+    const R = readiness();
+    const exInfo = [['ex1', 'Ex.1', 'Modes d\'adressage', 6, 'Mémoire et registres après une instruction MOVE.'], ['ex2', 'Ex.2', 'Additions & flags', 4, 'Résultat et N Z V C sur 8, 16, 32 bits.'], ['ex3', 'Ex.3', 'Questions de cours', 4, 'Pile, MOVEM, BSR, PC, directives.'], ['ex4', 'Ex.4', 'Traçage de programme', 6, 'CMP/Bcc, boucles SUBQ et DBRA, rotations.']];
+    const last = S.exams.slice(-10);
+    app.innerHTML = `
+    <section class="hero">
+      <div class="stack" style="gap:18px">
+        <span class="eyebrow">Architecture des ordinateurs · EPITA S3 · Motorola 68000</span>
+        <h1>Le labo pour viser <em>20/20</em> en assembleur 68000.</h1>
+        <p class="lead">Un vrai simulateur 68000 dans ton navigateur, une moulinette qui teste ton code, et des exercices générés à l'infini au format exact de ton contrôle, avec la correction pas à pas.</p>
+        <div class="row"><a class="btn pri" href="#exam">Lancer un examen blanc</a><a class="btn" href="#guide">Lire la méthode</a><a class="btn ghost" href="#labo">Ouvrir le Labo</a></div>
+        <div class="row tiny"><span>Raccourcis : <kbd>Entrée</kbd> valider · <kbd>N</kbd> question suivante · <kbd>Ctrl</kbd>+<kbd>Entrée</kbd> exécuter</span></div>
+      </div>
+      <div class="cpu" aria-label="Simulation en direct">
+        <div class="hdr"><span class="live">MC68000 · exécution en direct</span><span id="dstep">pas 0</span></div>
+        <div class="cur" id="dcur">—</div>
+        <div class="regs" id="dregs" style="grid-template-columns:repeat(2,minmax(0,1fr))"></div>
+        <div class="row" style="justify-content:space-between;margin-top:12px"><div class="leds" id="dleds"></div><span class="tiny">C'est l'Ex.4 de ton contrôle</span></div>
+      </div>
+    </section>
+    <section class="stack" style="gap:16px">
+      <div class="row" style="justify-content:space-between;align-items:end"><h2>Ta préparation</h2><span class="sub">${S.st.ex1.tot + S.st.ex2.tot + S.st.ex3.tot + S.st.ex4.tot} réponses · meilleure série ×${S.best} · ${S.day.n} jour(s) d'affilée</span></div>
+      <div class="grid4">${exInfo.map(([k, n, t, pts, d]) => { const p = R.per[k]; return `
+        <a class="card skill" href="#${k}" style="text-decoration:none;color:inherit">
+          <div class="top2"><span class="eyebrow">${n}</span><span class="pts">${pts} pts</span></div>
+          <h3 style="margin:0">${t}</h3><p class="sub">${d}</p>
+          <div class="meter"><i style="width:${Math.round(p.acc * p.conf * 100)}%"></i></div>
+          <div class="tiny">${p.n ? `${Math.round(p.acc * 100)} % sur les ${p.n} dernières` : 'Pas encore commencé'}</div>
+        </a>`; }).join('')}</div>
+      <div class="grid3">
+        <div class="card"><span class="eyebrow">Note estimée</span><div class="big" style="margin-top:10px">${R.est.toString().replace('.', ',')}<small> / 20</small></div><p class="sub" style="margin-top:8px">Calculée sur tes 12 dernières réponses par exercice, pondérée par le barème (6 · 4 · 4 · 6). Il faut au moins 6 réponses par exercice pour qu'elle compte à plein.</p></div>
+        <div class="card"><span class="eyebrow">Examens blancs</span>${last.length ? spark(last.map(e => e.score)) : '<p class="sub" style="margin-top:10px">Aucun examen passé. Le premier te donne ta vraie position.</p>'}<div class="row" style="margin-top:10px"><a class="btn sm" href="#exam">Passer un examen (1 h)</a></div></div>
+        <div class="card"><span class="eyebrow">Moulinette</span><div class="big" style="margin-top:10px">${Object.keys(S.solved).length}<small> / ${G.CH.length} défis</small></div><p class="sub" style="margin-top:8px">Écris de vrais sous-programmes, la moulinette les teste avec des registres pourris pour vérifier que tu sauvegardes tout.</p><div class="row" style="margin-top:10px"><a class="btn sm" href="#moulinette">Relever un défi</a></div></div>
+      </div>
+      <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Badges</h3><span class="tiny">${S.badges.length} / ${BADGES.length}</span></div>
+        <div class="badges">${BADGES.map(b => `<div class="bdg ${S.badges.includes(b[0]) ? 'got' : ''}" title="${esc(b[3])}"><span class="ic">${esc(b[1])}</span><span><b style="display:block;font-weight:600">${esc(b[2])}</b><span class="tiny">${esc(b[3])}</span></span></div>`).join('')}</div>
+      </div>
+    </section>`;
+    // démo live
+    const prog = M.assemble(DEMO); const cpu = new M.CPU(); let prev = null;
+    const restart = () => { cpu.load(prog); prev = cpu.D.slice(); };
+    restart();
+    const draw = () => {
+      const ins = prog.byAddr.get(cpu.pc);
+      $('#dcur').innerHTML = ins ? hl('\t' + ins.op.toLowerCase() + (ins.size ? '.' + ins.size.toLowerCase() : '') + '\t' + ins.ops.join(',')) : '<span class="t-com">; fin, on recommence</span>';
+      $('#dstep').textContent = 'pas ' + cpu.steps;
+      $('#dregs').innerHTML = [1, 2, 4, 7].map(i => `<div class="reg ${prev && prev[i] !== cpu.D[i] ? 'flash' : ''}"><b>D${i}</b><span>$${hx(cpu.D[i], 8)}</span></div>`).join('');
+      $('#dleds').innerHTML = ['X', 'N', 'Z', 'V', 'C'].map(f => `<span class="led ${cpu[f] ? 'on' : ''}"><i></i>${f}</span>`).join('');
+      prev = cpu.D.slice();
+    };
+    draw();
+    const timer = setInterval(() => {
+      if (cpu.halted) { restart(); draw(); return; }
+      try { const ins = prog.byAddr.get(cpu.pc); cpu.step(); if (ins && ins.op === 'BNE' && cpu.pc === ins.opnds[0].v && (cpu.D[0] & 0xFF) > 1) { /* accélère la boucle */ while ((cpu.D[0] & 0xFF) > 1) { cpu.step(); cpu.step(); cpu.step(); } } } catch (e) { restart(); }
+      draw();
+    }, reduce ? 2000 : 900);
+    cleanup = () => clearInterval(timer);
+  }
+  function spark(v) {
+    const w = 260, h = 70, n = v.length, x = i => n === 1 ? w / 2 : 8 + i * (w - 16) / (n - 1), y = s => h - 8 - s / 20 * (h - 16);
+    const pts = v.map((s, i) => `${x(i)},${y(s)}`).join(' ');
+    return `<div style="margin-top:10px"><div class="big">${v[n - 1].toString().replace('.', ',')}<small> / 20 au dernier</small></div>
+      <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;margin-top:8px" role="img" aria-label="Évolution des notes">
+      <line x1="0" x2="${w}" y1="${y(10)}" y2="${y(10)}" stroke="var(--line2)" stroke-dasharray="3 4"/>
+      <polyline points="${pts}" fill="none" stroke="var(--acc)" stroke-width="2"/>
+      ${v.map((s, i) => `<circle cx="${x(i)}" cy="${y(s)}" r="${i === n - 1 ? 4 : 2.5}" fill="${i === n - 1 ? 'var(--acc)' : 'var(--panel)'}" stroke="var(--acc)"/>`).join('')}</svg></div>`;
+  }
+
+  /* ================= GUIDE ================= */
+  const REF = [
+    ['MOVE', 's,d', 's → d', '-**00'], ['MOVEA', 's,An', 's → An (.W étendu en signe)', '-----'], ['MOVEQ', '#n,Dn', 'n (−128..127) étendu → Dn.L', '-**00'], ['MOVEM', 'liste,-(A7) / (A7)+,liste', 'empile / dépile plusieurs registres', '-----'],
+    ['LEA', 's,An', 'adresse effective de s → An', '-----'], ['CLR', 'd', '0 → d', '-0100'], ['ADD/ADDI/ADDQ', 's,d', 's + d → d (ADDQ : 1 à 8)', '*****'], ['SUB/SUBI/SUBQ', 's,d', 'd − s → d', '*****'],
+    ['CMP', 's,d', 'd − s, flags seulement', '-****'], ['TST', 'd', 'compare d à 0', '-**00'], ['NEG', 'd', '0 − d → d', '*****'], ['EXT', 'Dn', '.W : octet→mot · .L : mot→long', '-**00'],
+    ['SWAP', 'Dn', 'échange les deux moitiés de 16 bits', '-**00'], ['MULU/MULS', 's,Dn', '16 × 16 → 32 bits', '-**00'], ['DIVU/DIVS', 's,Dn', 'Dn / s.W → reste:quotient', '-***0'], ['AND/OR/EOR', 's,d', 'logique', '-**00'],
+    ['NOT', 'd', 'complément à 1', '-**00'], ['LSL/LSR', '#n,Dy', 'décalage logique (0 entre)', '***0*'], ['ASL/ASR', '#n,Dy', 'arithmétique (ASR recopie le signe)', '*****'], ['ROL/ROR', '#n,Dy', 'rotation (X intact)', '-**0*'],
+    ['BTST/BSET/BCLR', '#n,d', 'teste / met à 1 / à 0 le bit n', '--*--'], ['Bcc / BRA', 'étiquette', 'branche si cc vrai', '-----'], ['DBRA (DBF)', 'Dn,étiq.', 'Dn.W−1 ; boucle si ≠ −1', '-----'], ['BSR/JSR', 'étiquette', 'empile PC de retour, saute', '-----'],
+    ['RTS', '', 'dépile le PC', '-----'], ['TRAP #15', '', 'E/S du simulateur (D0 = tâche)', '-----'],
+  ];
+  function pageGuide() {
+    app.innerHTML = `
+    <div class="stack" style="gap:22px">
+      <div class="stack"><span class="eyebrow">Méthode 20/20</span><h2>Ce que le contrôle demande, et comment ne rien perdre</h2><p class="lead">Le contrôle dure 1 h, 4 exercices, 20 points. Les quatre exercices reviennent toujours sous la même forme : apprends la procédure de chacun, puis entraîne-toi jusqu'à ce qu'elle soit automatique.</p></div>
+      <div class="grid2 eq">
+        ${gcard('ex1', 'Ex.1 · 6 pts', 'Modes d\'adressage', ['Pour chaque opérande, écris la chaîne : <code>-7(A1)</code> → <code>(A1 − 7)</code> → <code>($5008 − 7)</code> → <code>($5001)</code>.', 'Lis la SOURCE en premier (avec ses effets de bord), puis calcule la DESTINATION avec les registres déjà modifiés.', 'Écris la valeur octet par octet : .B = 1 octet, .W = 2, .L = 4, en big-endian (poids fort à l\'adresse la plus basse).', 'Recopie la ligne mémoire entière et chaque registre modifié sur 32 bits ($00005004).'], ['<b>Pièges</b> : l\'index <code>D0.L = $FFFFFFFB</code> vaut −5. <code>D2.W = $FFFE</code> vaut −2 alors que <code>D2.L</code> est positif. <code>#52</code> est décimal ($34). <code>-(An)</code> décrémente AVANT, <code>(An)+</code> incrémente APRÈS.'])}
+        ${gcard('ex2', 'Ex.2 · 4 pts', 'Additions & flags', ['Additionne en hexa sur la taille demandée et tronque : $7F + $7F = $FE sur 8 bits.', '<b>C</b> : la somme non signée dépasse-t-elle $FF / $FFFF / $FFFFFFFF ?', '<b>V</b> : regarde les signes. Positif + positif = négatif, ou négatif + négatif = positif → V = 1. Sinon V = 0.', '<b>N</b> = bit de poids fort du résultat (1er chiffre hexa ≥ 8). <b>Z</b> = résultat nul.'], ['<b>Piège</b> : un positif + un négatif ne déborde JAMAIS (V = 0), même si C = 1. Sur 16 bits, $007F + $0080 = $00FF est positif : N = 0.'])}
+        ${gcard('ex3', 'Ex.3 · 4 pts', 'Questions de cours', ['Empiler : <code>MOVE.L D0,-(A7)</code>. Dépiler : <code>MOVE.L (A7)+,D0</code>.', 'Plusieurs registres : <code>MOVEM.L D0-D3/A1,-(A7)</code> puis <code>MOVEM.L (A7)+,D0-D3/A1</code>.', 'Appel : <code>BSR</code> ou <code>JSR</code>. Retour : <code>RTS</code>. Prochaine instruction : <code>PC</code>.', 'Directives : ORG (adresse), EQU (valeur), DC (constantes), DS (réservation).'], ['<b>Piège</b> : précise toujours la taille (.L) quand on te dit « sur 32 bits ». MOVEM avec <code>-(A7)</code> range dans l\'ordre inversé, mais tu écris la liste dans n\'importe quel ordre.'])}
+        ${gcard('ex4', 'Ex.4 · 6 pts', 'Traçage de programme', ['<b>CMP.s #x,Dn</b> calcule Dn − x sur la taille .s seulement. Repère si le Bcc est signé (GT GE LT LE) ou non signé (HI HS LO LS).', '<b>SUBQ.B + BNE</b> : le nombre de tours = l\'octet de poids faible de D0 ($104 → 4). S\'il vaut 0 → 256 tours.', '<b>DBRA</b> : tours = D0.W + 1 ($9999 → $999A). Les 16 bits de poids fort sont ignorés.', '<b>Rotations</b> : 1 chiffre hexa = 4 bits. ROR.W #4 ne tourne que le mot de poids faible.'], ['<b>Pièges</b> : D2 et D3 sont des compteurs → répondre sur 32 bits ($00000004). <code>$9382</code> est NÉGATIF en .W : il est plus petit que $7000 en signé.'])}
+      </div>
+      <div class="grid2 eq">
+        <div class="card"><h3>Branchements après <code>CMP src,dst</code></h3><div class="tblwrap"><table class="t"><thead><tr><th>Si dst … src</th><th>Non signé</th><th>Signé</th></tr></thead><tbody>
+          <tr><td>&gt;</td><td><code>BHI</code></td><td><code>BGT</code></td></tr><tr><td>≥</td><td><code>BHS</code> = BCC</td><td><code>BGE</code></td></tr><tr><td>&lt;</td><td><code>BLO</code> = BCS</td><td><code>BLT</code></td></tr><tr><td>≤</td><td><code>BLS</code></td><td><code>BLE</code></td></tr><tr><td>= / ≠</td><td colspan="2"><code>BEQ</code> / <code>BNE</code></td></tr></tbody></table></div>
+          <p class="tiny" style="margin-top:8px">GT : Z = 0 et N = V · GE : N = V · HI : C = 0 et Z = 0 · LS : C = 1 ou Z = 1</p></div>
+        <div class="card"><h3>Modes d'adressage</h3><div class="tblwrap"><table class="t"><thead><tr><th>Syntaxe</th><th>Adresse effective</th></tr></thead><tbody>
+          <tr><td><code>Dn</code> / <code>An</code></td><td>le registre lui-même</td></tr><tr><td><code>#n</code></td><td>aucune (donnée immédiate)</td></tr><tr><td><code>(An)</code></td><td>An</td></tr><tr><td><code>(An)+</code></td><td>An, puis An += 1/2/4</td></tr><tr><td><code>-(An)</code></td><td>An −= 1/2/4, puis An</td></tr><tr><td><code>d16(An)</code></td><td>An + d16</td></tr><tr><td><code>d8(An,Xn.W/.L)</code></td><td>An + Xn (signé) + d8</td></tr><tr><td><code>$5006</code></td><td>absolu : $5006</td></tr></tbody></table></div></div>
+      </div>
+      <div class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Référence des instructions</h3><input class="field" id="qref" placeholder="Filtrer : DBRA, flags, pile…" style="max-width:260px"></div>
+        <div class="tblwrap"><table class="t" id="reft"><thead><tr><th>Instruction</th><th>Opérandes</th><th>Effet</th><th>X N Z V C</th></tr></thead><tbody></tbody></table></div>
+        <p class="tiny" style="margin-top:8px">* modifié selon le résultat · - inchangé · 0 / 1 forcé. Source : annexe EASy68K du sujet.</p></div>
+    </div>`;
+    const body = $('#reft tbody');
+    const fill = q => { q = (q || '').toUpperCase(); body.innerHTML = REF.filter(r => !q || r.join(' ').toUpperCase().includes(q)).map(r => `<tr><td><code>${r[0]}</code></td><td><code>${esc(r[1])}</code></td><td>${esc(r[2])}</td><td><code>${r[3].split('').join(' ')}</code></td></tr>`).join(''); };
+    fill(); $('#qref').addEventListener('input', e => fill(e.target.value));
+  }
+  function gcard(k, eb, t, steps, traps) { return `<div class="card gcard"><span class="eyebrow">${eb}</span><h3 style="margin:0">${t}</h3><ol>${steps.map(s => `<li>${s}</li>`).join('')}</ol>${traps.map(x => `<div class="trap">${x}</div>`).join('')}<div><a class="btn sm pri" href="#${k}">S'entraîner</a></div></div>`; }
+
+  /* ================= composants partagés ================= */
+  const memRows = (st, mem, mark) => [0, 8, 16].map(o => `<div class="memrow"><span class="ad">$${hx(st.base + o, 6)}</span><span class="bytes">${mem.slice(o, o + 8).map((b, i) => `<span class="${mark ? mark(o + i) : ''}">${hx(b, 2)}</span>`).join('')}</span></div>`).join('');
+  const initPanel = st => `<div class="card stack"><div class="row" style="justify-content:space-between"><span class="eyebrow">Valeurs initiales</span><span class="tiny">réinitialisées à chaque instruction</span></div>
+      <div class="regs" style="grid-template-columns:repeat(2,minmax(0,1fr))">${[0, 1, 2].map(i => `<div class="reg"><b>D${i}</b><span>$${hx(st.D[i], 8)}</span></div><div class="reg"><b>A${i}</b><span>$${hx(st.A[i], 8)}</span></div>`).join('')}<div class="reg"><b>PC</b><span>$00006000</span></div></div>
+      <div class="memtbl">${memRows(st, st.mem)}</div></div>`;
+  const parseBytes = s => { const t = s.trim().replace(/\$/g, '').split(/[\s,]+/).filter(Boolean); if (t.length !== 8 || t.some(x => !/^[0-9a-f]{1,2}$/i.test(x))) return null; return t.map(x => parseInt(x, 16)); };
+  const parseHex = s => { const t = String(s).trim().replace(/^\$|^0x/i, ''); if (!/^[0-9a-f]{1,8}$/i.test(t)) return null; return parseInt(t, 16) >>> 0; };
+  function chainHTML(ex) { return ex.map(e => `<div class="stack" style="gap:6px"><span class="tiny" style="color:var(--muted)">${e.label}</span><div class="chain">${e.chain.map(c => `<span>${esc(c)}</span>`).join('<i>→</i>')}</div>${e.note ? `<div class="note">${esc(e.note)}</div>` : ''}</div>`).join(''); }
+  function regsChangedTxt(r) { return r.regChanged.length ? r.regChanged.map(n => `<code>${n} = $${hx(n[0] === 'D' ? r.D[+n[1]] : r.A[+n[1]], 8)}</code>`).join(' ') : 'Aucun changement'; }
+
+  /* ================= EX.1 ================= */
+  let E1 = null;
+  function newE1(keepState) { const st = keepState && E1 && E1.k < 4 ? E1.st : G.ex1State(); const k = keepState && E1 && E1.k < 4 ? E1.k + 1 : 1; const g = G.genEx1(st); E1 = { ...g, k, done: false }; }
+  function pageEx1() {
+    if (!E1) newE1();
+    const { st, ins, k } = E1;
+    app.innerHTML = `
+    <div class="stack" style="gap:18px">
+      <div class="row" style="justify-content:space-between;align-items:end"><div class="stack" style="gap:6px"><span class="eyebrow">Exercice 1 · 6 points au contrôle</span><h2>Modes d'adressage</h2><p class="lead">Donne le nouveau contenu de la mémoire et des registres après l'instruction. Comme au contrôle, 4 instructions partagent les mêmes valeurs initiales.</p></div><span class="pill acc">Instruction ${k} / 4</span></div>
+      <div class="grid2">
+        ${initPanel(st)}
+        <div class="card stack" id="e1card">
+          <div class="instr" id="e1ins">${hl('\t' + ins).replace(/^\t/, '')}</div>
+          <div><label class="lab">Mémoire après l'instruction (modifie les octets qui changent)</label>
+            <div class="memin">${[0, 8, 16].map((o, i) => `<span class="ad">$${hx(st.base + o, 6)}</span><input class="field" id="e1m${i}" value="${st.mem.slice(o, o + 8).map(b => hx(b, 2)).join(' ')}" autocomplete="off" spellcheck="false" aria-label="Ligne mémoire $${hx(st.base + o, 6)}">`).join('')}</div></div>
+          <div><label class="lab">Registres après l'instruction (32 bits)</label>
+            <div class="ansgrid">${['D0', 'A0', 'D1', 'A1', 'D2', 'A2'].map(r => `<div><label class="lab" for="e1r${r}">${r}</label><input class="field" id="e1r${r}" value="$${hx(r[0] === 'D' ? st.D[+r[1]] : st.A[+r[1]], 8)}" autocomplete="off" spellcheck="false"></div>`).join('')}</div></div>
+          <div class="row"><button class="btn pri" id="e1go" type="button">Vérifier <kbd>Entrée</kbd></button><button class="btn" id="e1hint" type="button">Indice</button><button class="btn ghost" id="e1next" type="button">Suivante <kbd>N</kbd></button><button class="btn ghost" id="e1lab" type="button">Voir au Labo</button></div>
+          <div id="e1fb"></div>
+        </div>
+      </div>
+    </div>`;
+    $('#e1go').onclick = check; $('#e1next').onclick = () => { newE1(true); pageEx1(); };
+    $('#e1hint').onclick = () => { const ex = G.explain1(st, ins); $('#e1fb').innerHTML = `<div class="fb"><span class="tiny">Indice : calcule d'abord l'adresse effective de chaque opérande.</span>${chainHTML(ex.map(e => ({ ...e, chain: e.chain.slice(0, 2), note: '' })))}</div>`; };
+    $('#e1lab').onclick = () => openInLabo(ex1LaboSrc(st, ins));
+    keyHandler = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); E1.done ? $('#e1next').click() : check(); } else if ((e.key === 'n' || e.key === 'N') && !typing(e)) { $('#e1next').click(); } };
+    function check() {
+      if (E1.done) return;
+      const r = E1.res; let ok = true;
+      [0, 1, 2].forEach(i => { const inp = $('#e1m' + i); const b = parseBytes(inp.value); const good = b && b.every((x, j) => x === r.mem[i * 8 + j]); inp.classList.toggle('ok', !!good); inp.classList.toggle('ko', !good); if (!good) ok = false; });
+      ['D0', 'D1', 'D2', 'A0', 'A1', 'A2'].forEach(n => { const inp = $('#e1r' + n); const v = parseHex(inp.value); const exp = n[0] === 'D' ? r.D[+n[1]] : r.A[+n[1]]; const good = v === exp; inp.classList.toggle('ok', good); inp.classList.toggle('ko', !good); if (!good) ok = false; });
+      E1.done = true;
+      award('ex1', ok, 15, $('#e1go'));
+      if (!ok) shake($('#e1card')); else if (S.combo % 5 === 0) confetti(70);
+      const ex = G.explain1(st, ins);
+      $('#e1fb').innerHTML = `<div class="fb ${ok ? 'ok' : 'ko'}"><div class="verdict">${ok ? 'Exact.' : 'Pas tout à fait.'}</div>${chainHTML(ex)}
+        <div class="stack" style="gap:6px"><span class="tiny" style="color:var(--muted)">Réponse attendue</span><div class="memtbl">${memRows(st, r.mem, i => r.memChanged[i] ? 'ch' : '')}</div><div class="sub">Registres : ${regsChangedTxt(r)}</div></div></div>`;
+    }
+  }
+  function ex1LaboSrc(st, ins) {
+    const L = ['; Ex.1 : état initial puis l\'instruction (exécute pas à pas)'];
+    [0, 1, 2].forEach(i => L.push(`\tmove.l\t#$${hx(st.D[i], 8)},d${i}`));
+    [0, 1, 2].forEach(i => L.push(`\tmovea.l\t#$${hx(st.A[i], 8)},a${i}`));
+    L.push('\tbra\tgo', '', `\torg\t$${hx(st.base, 4)}`, `\tdc.b\t${st.mem.map(b => '$' + hx(b, 2)).join(',')}`, '', '\torg\t$1100', 'go\t' + ins.toLowerCase());
+    return L.join('\n');
+  }
+
+  /* ================= EX.2 ================= */
+  let E2 = null, E2sub = false;
+  function pageEx2() {
+    if (!E2) E2 = { q: G.genEx2(E2sub), done: false, fl: { N: 0, Z: 0, V: 0, C: 0 } };
+    const { q } = E2; const bits = q.s * 8;
+    app.innerHTML = `
+    <div class="stack" style="gap:18px">
+      <div class="row" style="justify-content:space-between;align-items:end"><div class="stack" style="gap:6px"><span class="eyebrow">Exercice 2 · 4 points au contrôle</span><h2>Additions et flags N Z V C</h2><p class="lead">Donne le résultat sur la taille indiquée et l'état des quatre flags. Touches <kbd>N</kbd><kbd>Z</kbd><kbd>V</kbd><kbd>C</kbd> pour basculer un flag hors du champ de saisie.</p></div>
+        <label class="check"><input type="checkbox" id="e2sub" ${E2sub ? 'checked' : ''}> Ajouter des soustractions (bonus)</label></div>
+      <div class="grid2 lft">
+        <div class="card stack" id="e2card" style="gap:18px">
+          <div class="row" style="justify-content:space-between"><span class="pill acc">${bits} bits · .${{ 1: 'B', 2: 'W', 4: 'L' }[q.s]}</span><span class="tiny">${q.op === 'ADD' ? 'Addition' : 'Soustraction (destination − source)'}</span></div>
+          <div class="bigop">${q.text} <span style="color:var(--dim)">=</span> ?</div>
+          <div><label class="lab" for="e2res">Résultat (hexadécimal, ${q.s * 2} chiffres)</label><input class="field" id="e2res" placeholder="$${'0'.repeat(q.s * 2)}" autocomplete="off" spellcheck="false" style="font-size:18px;max-width:240px"></div>
+          <div><label class="lab">Flags</label><div class="flags">${['N', 'Z', 'V', 'C'].map(f => `<button type="button" class="flag ${E2.fl[f] ? 'on' : ''}" data-f="${f}" aria-label="Flag ${f}"><span class="k">${f}</span><span class="v">${E2.fl[f]}</span></button>`).join('')}</div></div>
+          <div class="row"><button class="btn pri" id="e2go" type="button">Vérifier <kbd>Entrée</kbd></button><button class="btn" id="e2bin" type="button">Voir en binaire</button><button class="btn ghost" id="e2next" type="button">Suivante</button></div>
+          <div id="e2binv"></div>
+        </div>
+        <div id="e2fb" class="stack"><div class="card flat stack"><span class="eyebrow">Mémo</span><p class="sub"><b>C</b> = retenue non signée · <b>V</b> = débordement signé (même signe en entrée, signe différent en sortie) · <b>N</b> = bit de poids fort · <b>Z</b> = résultat nul.</p><p class="sub">Un chiffre hexa ≥ 8 en tête = nombre négatif en signé.</p></div></div>
+      </div>
+    </div>`;
+    const flip = f => { if (E2.done) return; E2.fl[f] ^= 1; const b = $(`.flag[data-f="${f}"]`); b.classList.toggle('on', !!E2.fl[f]); $('.v', b).textContent = E2.fl[f]; };
+    $$('.flag').forEach(b => b.onclick = () => flip(b.dataset.f));
+    $('#e2sub').onchange = e => { E2sub = e.target.checked; E2 = null; pageEx2(); };
+    $('#e2next').onclick = () => { E2 = null; pageEx2(); setTimeout(() => $('#e2res') && $('#e2res').focus(), 0); };
+    $('#e2bin').onclick = () => { const b = (v) => v.toString(2).padStart(bits, '0').replace(/(.{4})(?=.)/g, '$1 '); $('#e2binv').innerHTML = `<div class="bin">  ${b(q.a)}\n${q.op === 'ADD' ? '+' : '−'} ${b(q.b)}</div>`; };
+    $('#e2go').onclick = check;
+    keyHandler = e => {
+      if (e.key === 'Enter') { e.preventDefault(); E2.done ? $('#e2next').click() : check(); return; }
+      if (typing(e)) return;
+      const k = e.key.toUpperCase(); if (['N', 'Z', 'V', 'C'].includes(k) && !E2.done) { e.preventDefault(); flip(k); } else if (k === 'N' && E2.done) $('#e2next').click();
+    };
+    function check() {
+      if (E2.done) return; E2.done = true;
+      const v = parseHex($('#e2res').value); const rok = v !== null && v === q.r && $('#e2res').value.replace(/^\$/, '').trim().length <= q.s * 2;
+      $('#e2res').classList.toggle('ok', rok); $('#e2res').classList.toggle('ko', !rok);
+      let fok = true; ['N', 'Z', 'V', 'C'].forEach(f => { const g = E2.fl[f] === q[f]; if (!g) fok = false; const b = $(`.flag[data-f="${f}"]`); b.classList.add(g ? 'ok' : 'ko'); });
+      const ok = rok && fok; award('ex2', ok, 10, $('#e2go')); if (!ok) shake($('#e2card'));
+      $('#e2fb').innerHTML = `<div class="fb ${ok ? 'ok' : 'ko'}"><div class="verdict">${ok ? 'Exact.' : 'Raté, regarde le détail.'}</div>
+        <div class="row" style="gap:14px"><span class="mono" style="font-size:20px">$${hx(q.r, q.s * 2)}</span>${['N', 'Z', 'V', 'C'].map(f => `<span class="pill ${E2.fl[f] === q[f] ? 'ok' : 'ko'}">${f} = ${q[f]}</span>`).join('')}</div>
+        <div class="explain">${G.explain2(q).map(l => `<div>${l}</div>`).join('')}</div></div>`;
+      $('#e2bin').click();
+    }
+    setTimeout(() => $('#e2res') && $('#e2res').focus(), 0);
+  }
+
+  /* ================= EX.3 ================= */
+  let E3 = null;
+  function pageEx3() {
+    if (!E3) E3 = { q: G.genEx3(), done: false };
+    const { q } = E3;
+    app.innerHTML = `
+    <div class="stack" style="gap:18px">
+      <div class="stack" style="gap:6px"><span class="eyebrow">Exercice 3 · 4 points au contrôle</span><h2>Questions de cours</h2><p class="lead">Réponds par une instruction, un registre, un flag ou un nombre. Les instructions sont corrigées par un vrai parseur : <code>MOVEM.L (SP)+,A4/A3/A2/A1</code> est accepté pour <code>MOVEM.L (A7)+,A1-A4</code>.</p></div>
+      <div class="card stack" id="e3card" style="gap:16px;max-width:860px">
+        <span class="pill acc" style="align-self:start">${q.type === 'ins' ? 'Instruction attendue' : q.type === 'num' ? 'Nombre attendu' : 'Réponse courte'}</span>
+        <h3 style="font-size:21px;line-height:1.35">${esc(q.q)}</h3>
+        <input class="field" id="e3in" placeholder="${q.type === 'ins' ? 'ex : MOVE.L D0,-(A7)' : 'ta réponse'}" autocomplete="off" spellcheck="false" style="font-size:17px">
+        <div class="row"><button class="btn pri" id="e3go" type="button">Vérifier <kbd>Entrée</kbd></button><button class="btn" id="e3idk" type="button">Je ne sais pas</button><button class="btn ghost" id="e3next" type="button">Suivante</button></div>
+        <div id="e3fb"></div>
+      </div>
+    </div>`;
+    const next = () => { E3 = null; pageEx3(); setTimeout(() => $('#e3in').focus(), 0); };
+    $('#e3next').onclick = next; $('#e3go').onclick = () => check(false); $('#e3idk').onclick = () => check(true);
+    keyHandler = e => { if (e.key === 'Enter') { e.preventDefault(); E3.done ? next() : check(false); } else if ((e.key === 'n' || e.key === 'N') && !typing(e) && E3.done) next(); };
+    function check(idk) {
+      if (E3.done) return; E3.done = true;
+      const ok = !idk && G.check3(q, $('#e3in').value);
+      $('#e3in').classList.add(ok ? 'ok' : 'ko'); award('ex3', ok, 8, $('#e3go')); if (!ok) shake($('#e3card'));
+      $('#e3fb').innerHTML = `<div class="fb ${ok ? 'ok' : 'ko'}"><div class="verdict">${ok ? 'Exact.' : 'Réponse attendue :'}</div><div class="mono" style="font-size:18px">${esc(q.show)}</div><p class="sub">${esc(q.why)}</p></div>`;
+    }
+    setTimeout(() => $('#e3in').focus(), 0);
+  }
+
+  /* ================= EX.4 ================= */
+  let E4 = null;
+  function pageEx4() {
+    if (!E4) E4 = { g: G.genEx4(), done: false };
+    const { g } = E4;
+    app.innerHTML = `
+    <div class="stack" style="gap:18px">
+      <div class="stack" style="gap:6px"><span class="eyebrow">Exercice 4 · 6 points au contrôle</span><h2>Traçage de programme</h2><p class="lead">Donne D1, D2, D3 et D4 après l'exécution, en hexadécimal sur 32 bits. Chaque programme est généré avec les mêmes pièges que le contrôle.</p></div>
+      <div class="grid2">
+        <div class="stack">${listing(g.prog)}<button class="btn ghost sm" id="e4lab" type="button" style="align-self:start">Exécuter pas à pas au Labo</button></div>
+        <div class="card stack" id="e4card">
+          <span class="eyebrow">Valeurs des registres après exécution</span>
+          <div class="ansgrid" style="grid-template-columns:repeat(2,minmax(0,1fr))">${[1, 2, 3, 4].map(i => `<div><label class="lab" for="e4d${i}">D${i} = $</label><input class="field" id="e4d${i}" placeholder="00000000" autocomplete="off" spellcheck="false" style="font-size:16px"></div>`).join('')}</div>
+          <div class="row"><button class="btn pri" id="e4go" type="button">Vérifier <kbd>Entrée</kbd></button><button class="btn ghost" id="e4next" type="button">Nouveau programme</button></div>
+          <div id="e4fb"></div>
+        </div>
+      </div>
+    </div>`;
+    $('#e4lab').onclick = () => openInLabo(g.prog);
+    const next = () => { E4 = null; pageEx4(); };
+    $('#e4next').onclick = next; $('#e4go').onclick = check;
+    keyHandler = e => { if (e.key === 'Enter') { e.preventDefault(); E4.done ? next() : check(); } else if ((e.key === 'n' || e.key === 'N') && !typing(e) && E4.done) next(); };
+    function check() {
+      if (E4.done) return; E4.done = true; let n = 0;
+      [1, 2, 3, 4].forEach((i, k) => { const inp = $('#e4d' + i), v = parseHex(inp.value), good = v === g.ans[k]; inp.classList.add(good ? 'ok' : 'ko'); if (good) n++; });
+      const ok = n === 4; award('ex4', ok, 10 + n * 5, $('#e4go')); if (!ok) shake($('#e4card'));
+      $('#e4fb').innerHTML = `<div class="fb ${ok ? 'ok' : 'ko'}"><div class="verdict">${n} / 4 registres justes</div>
+        ${g.ex.map((x, k) => `<details ${k < 3 || !ok ? 'open' : ''}><summary class="mono" style="cursor:pointer;color:var(--acc)">${x.t} = $${hx(g.ans[k], 8)}</summary><div class="explain" style="margin-top:6px">${x.lines.map(l => `<div>${l}</div>`).join('')}</div></details>`).join('')}</div>`;
+    }
+  }
+
+  /* ================= LABO ================= */
+  const EXAMPLES = {
+    'Ex.4 du contrôle S3': `Main	move.l	#$52A59382,d7\npart1	moveq.l	#1,d1\n	cmp.w	#$7000,d7\n	bgt	part2\n	moveq.l	#2,d1\npart2	clr.l	d2\n	move.l	#260,d0\nloop2	addq.l	#1,d2\n	subq.b	#1,d0\n	bne	loop2\npart3	clr.l	d3\n	move.l	#$99999999,d0\nloop3	addq.l	#1,d3\n	dbra	d0,loop3	; DBRA = DBF\npart4	move.l	#$12345678,d4\n	ror.w	#4,d4\n	ror.l	#8,d4\n	swap	d4\n	rol.b	#4,d4\n	ror.l	#8,d4`,
+    'Sous-programme GetMin': `Main	moveq.l	#15,d1\n	moveq.l	#25,d2\n	jsr	GetMin		; 15 -> D0\n	moveq.l	#30,d1\n	moveq.l	#16,d2\n	jsr	GetMin		; 16 -> D0\n	bra	Fin\n\nGetMin	cmp.l	d1,d2\n	ble	d2min		; D2 <= D1 (signé)\nd1min	move.l	d1,d0\n	rts\nd2min	move.l	d2,d0\n	rts\n\nFin	nop`,
+    'Pile et MOVEM': `	move.l	#$11112222,d0\n	move.l	#$AAAABBBB,d1\n	move.w	#$42,-(a7)\n	move.l	#$53,-(a7)\n	move.w	d0,-(a7)\n	move.l	d1,-(a7)\n	clr.w	d0\n	clr.l	d1\n	move.l	(a7)+,d1\n	move.w	(a7)+,d0\n	move.l	(a7)+,d2\n	move.w	(a7)+,d3\n\n	movem.l	d0-d3/a4,-(a7)	; regarde la pile en mémoire\n	movem.l	(a7)+,d0-d3/a4`,
+    'Bonjour avec TRAP #15': `	lea	msg,a1\n	move.b	#14,d0		; tâche 14 : afficher la chaîne\n	trap	#15\n	move.l	#2026,d1\n	move.b	#3,d0		; tâche 3 : afficher D1.L\n	trap	#15\n	rts\n\nmsg	dc.b	'Salut EPITA, promo ',0`,
+    'Modes d\'adressage (cours 4.x)': `	move.l	#$0000FFFF,d0\n	moveq.l	#4,d1\n	move.l	#$FFFFF000,d2\n	lea	tab,a0\n	lea	8(a0),a1\n	lea	16(a0),a2\n	move.l	-(a2),-(a2)		; 4.8\n	move.b	5(a1),-1(a1,d0.w)	; 4.9\n	move.w	2(a1,d1.l),-6(a2)	; 4.10\n	rts\n\n	org	$1000\ntab	dc.b	$21,$45,$87,$AF,$B5,$F3,$3C,$32\n	dc.b	$AD,$45,$39,$98,$9A,$9B,$9C,$9D\n	dc.b	$03,$69,$01,$00,$12,$0A,$0D,$C9`,
+  };
+  let LB = null; // { ed, prog, cpu, memAddr, prev }
+  function openInLabo(src) { S.labo = src; save(); LB = null; if (location.hash === '#labo') go(); else location.hash = '#labo'; }
+  function pageLabo() {
+    const src = S.labo || EXAMPLES['Ex.4 du contrôle S3'];
+    app.innerHTML = `
+    <div class="stack" style="gap:16px">
+      <div class="row" style="justify-content:space-between;align-items:end"><div class="stack" style="gap:6px"><span class="eyebrow">Labo · simulateur 68000</span><h2>Écris, exécute, rembobine</h2></div>
+        <select class="field" id="lbex" style="max-width:260px" aria-label="Charger un exemple"><option value="">Charger un exemple…</option>${Object.keys(EXAMPLES).map(k => `<option>${esc(k)}</option>`).join('')}</select></div>
+      <div class="labo">
+        <div class="stack" style="gap:10px">
+          <div class="toolbar">
+            <button class="btn pri sm" id="lbrun" type="button">▶ Exécuter <kbd>Ctrl+Entrée</kbd></button>
+            <button class="btn sm" id="lbstep" type="button">Pas <kbd>F8</kbd></button>
+            <button class="btn sm" id="lbback" type="button">↶ Pas arrière</button>
+            <button class="btn sm" id="lbanim" type="button">Animer</button>
+            <button class="btn ghost sm" id="lbreset" type="button">Réinitialiser</button>
+          </div>
+          <div id="lbed"></div>
+          <div id="lberr"></div>
+          <div class="row" style="justify-content:space-between"><span class="status" id="lbstat">Prêt. Clique dans la marge pour poser un point d'arrêt.</span></div>
+          <div><label class="lab">Console (TRAP #15)</label><div class="console" id="lbout"></div></div>
+        </div>
+        <div class="stack" style="gap:12px">
+          <div class="card stack" style="gap:10px">
+            <div class="row" style="justify-content:space-between"><span class="eyebrow">Registres</span><span class="mono tiny" id="lbpc"></span></div>
+            <div class="regs" id="lbregs" style="grid-template-columns:repeat(2,minmax(0,1fr))"></div>
+            <div class="row" style="justify-content:space-between"><div class="leds" id="lbleds"></div><span class="mono tiny" id="lbsr"></span></div>
+          </div>
+          <div class="card stack" style="gap:10px">
+            <div class="row" style="justify-content:space-between"><span class="eyebrow">Mémoire</span><div class="row" style="gap:6px"><input class="field" id="lbaddr" style="width:110px;padding:5px 8px" aria-label="Adresse mémoire"><button class="btn sm ghost" data-go="A0" type="button">A0</button><button class="btn sm ghost" data-go="A7" type="button">Pile</button><button class="btn sm ghost" data-go="data" type="button">Données</button></div></div>
+            <div class="memview" id="lbmem"></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    const ed = makeEditor($('#lbed'), src, { id: 'labosrc', onChange: v => { S.labo = v; save(); LB.prog = null; }, onKey: e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run(); } } });
+    LB = { ed, prog: null, cpu: new M.CPU(), memAddr: null, prev: null, anim: null };
+    const cpu = () => LB.cpu;
+    function assemble() {
+      $('#lberr').innerHTML = '';
+      try { LB.prog = M.assemble(ed.value); LB.cpu.load(LB.prog); LB.cpu.histOn = true; LB.cpu.histStack = []; LB.prev = null; if (LB.memAddr === null) LB.memAddr = LB.prog.data.length ? LB.prog.data[0].addr & ~15 : 0x1000; return true; }
+      catch (e) { showErr(e); return false; }
+    }
+    function showErr(e) { $('#lberr').innerHTML = `<div class="errbar">${e.line ? 'Ligne ' + e.line + ' · ' : ''}${esc(e.message)}</div>`; ed.mark({ err: e.line }); sfx('ko'); stopAnim(); }
+    function ensure() { if (!LB.prog) return assemble(); return true; }
+    function run() {
+      stopAnim(); if (!LB.prog || LB.cpu.halted) { if (!assemble()) return; }
+      const c = cpu(); LB.prev = { D: c.D.slice(), A: c.A.slice() }; c.histOn = false; let n = 0;
+      try {
+        while (!c.halted) {
+          c.step(); n++;
+          const ins = LB.prog.byAddr.get(c.pc); if (ins && ed.bps.has(ins.no)) { c.histOn = true; $('#lbstat').textContent = `Point d'arrêt ligne ${ins.no}.`; break; }
+          if (n > 3000000) throw new M.RunError('Arrêt après 3 000 000 instructions : boucle infinie ?', c.cur && c.cur.no);
+        }
+      } catch (e) { showErr(e); }
+      c.histOn = true;
+      if (!S.ran) { S.ran = true; save(); } grant('lab');
+      draw();
+    }
+    function step() { stopAnim(); doStep(); }
+    function doStep() {
+      if (!ensure()) return false;
+      const c = cpu(); if (c.halted) { draw(); return false; }
+      LB.prev = { D: c.D.slice(), A: c.A.slice() };
+      try { c.step(); } catch (e) { showErr(e); return false; }
+      draw(); return !c.halted;
+    }
+    function back() { stopAnim(); const c = cpu(); LB.prev = { D: c.D.slice(), A: c.A.slice() }; if (!c.back()) { $('#lbstat').textContent = 'Rien à rembobiner.'; return; } draw(); }
+    function stopAnim() { if (LB.anim) { clearInterval(LB.anim); LB.anim = null; $('#lbanim').textContent = 'Animer'; } }
+    function anim() { if (LB.anim) return stopAnim(); if (!ensure()) return; $('#lbanim').textContent = 'Pause'; LB.anim = setInterval(() => { const c = cpu(); if (!doStep()) stopAnim(); else { const ins = LB.prog.byAddr.get(c.pc); if (ins && ed.bps.has(ins.no)) stopAnim(); } }, 380); }
+    function draw() {
+      const c = cpu(), p = LB.prev || { D: c.D, A: c.A };
+      const nextIns = LB.prog && LB.prog.byAddr.get(c.pc);
+      ed.mark({ cur: c.halted ? null : nextIns && nextIns.no });
+      $('#lbregs').innerHTML = [0, 1, 2, 3, 4, 5, 6, 7].map(i => `<div class="reg ${p.D[i] !== c.D[i] ? 'flash' : ''}" title="D${i} = ${c.D[i] | 0} (signé)"><b>D${i}</b><span>$${hx(c.D[i], 8)}</span></div><div class="reg ${p.A[i] !== c.A[i] ? 'flash' : ''}"><b>${i === 7 ? 'A7/SP' : 'A' + i}</b><span>$${hx(c.A[i], 8)}</span></div>`).join('');
+      $('#lbleds').innerHTML = ['X', 'N', 'Z', 'V', 'C'].map(f => `<span class="led ${c[f] ? 'on' : ''}"><i></i>${f}</span>`).join('');
+      $('#lbsr').textContent = 'SR = $' + hx(c.sr, 4); $('#lbpc').textContent = 'PC = $' + hx(c.pc, 8);
+      $('#lbout').textContent = c.out || '';
+      $('#lbstat').textContent = c.halted ? `Terminé en ${c.steps} instructions. ${c.haltMsg}` : LB.prog ? `${c.steps} instruction(s) exécutée(s). Prochaine : ligne ${nextIns ? nextIns.no : '?'}.` : 'Prêt.';
+      drawMem();
+    }
+    function drawMem() {
+      const c = cpu(); const base = (LB.memAddr ?? 0x1000) & 0xFFFFF0; $('#lbaddr').value = '$' + hx(base, 6);
+      let out = '';
+      for (let r = 0; r < 12; r++) {
+        const a = base + r * 8; let line = `<span class="a">${hx(a, 6)}</span>  `; let asc = '';
+        for (let k = 0; k < 8; k++) { const ad = (a + k) & 0xFFFFFF, b = c.mem[ad]; const isSp = ad === (c.A[7] & 0xFFFFFF); line += `<span class="${c.writes.has(ad) ? 'ch' : isSp ? 'sp' : ''}">${hx(b, 2)}</span> `; asc += b >= 32 && b < 127 ? esc(String.fromCharCode(b)) : '·'; }
+        out += line + ' ' + asc + '\n';
+      }
+      $('#lbmem').innerHTML = out;
+    }
+    $('#lbaddr').addEventListener('change', e => { const v = parseHex(e.target.value); if (v !== null) { LB.memAddr = v; drawMem(); } });
+    $$('[data-go]').forEach(b => b.onclick = () => { const c = cpu(); const k = b.dataset.go; LB.memAddr = k === 'A0' ? c.A[0] : k === 'A7' ? Math.max(0, c.A[7] - 48) : (LB.prog && LB.prog.data.length ? LB.prog.data[0].addr : 0x1000); drawMem(); });
+    $('#lbex').onchange = e => { if (!e.target.value) return; ed.value = EXAMPLES[e.target.value]; S.labo = ed.value; save(); LB.prog = null; LB.memAddr = null; assemble(); draw(); e.target.value = ''; };
+    $('#lbrun').onclick = run; $('#lbstep').onclick = step; $('#lbback').onclick = back; $('#lbanim').onclick = anim;
+    $('#lbreset').onclick = () => { stopAnim(); assemble(); draw(); };
+    keyHandler = e => { if (e.key === 'F8') { e.preventDefault(); step(); } if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !typing(e)) { e.preventDefault(); run(); } };
+    assemble(); draw();
+    cleanup = () => stopAnim();
+  }
+
+  /* ================= MOULINETTE ================= */
+  let MC = G.CH[0].id;
+  function pageMoul() {
+    const ch = G.CH.find(c => c.id === MC);
+    app.innerHTML = `
+    <div class="stack" style="gap:16px">
+      <div class="stack" style="gap:6px"><span class="eyebrow">Moulinette · ${Object.keys(S.solved).length} / ${G.CH.length} défis validés</span><h2>Écris le sous-programme, la moulinette le teste</h2><p class="lead">La moulinette appelle ton étiquette avec <code>JSR</code>, remplit les autres registres de valeurs aléatoires, puis vérifie la sortie, la mémoire, l'équilibre de la pile et que tu n'as rien écrasé.</p></div>
+      <div class="moul">
+        <div class="chlist" role="list">${G.CH.map(c => `<button type="button" role="listitem" class="chi ${c.id === MC ? 'on' : ''}" data-id="${c.id}"><span class="stack" style="gap:3px"><span class="nm">${esc(c.name)}</span><span class="dots">${[1, 2, 3].map(i => `<i class="${i <= c.lvl ? 'f' : ''}"></i>`).join('')}</span></span>${S.solved[c.id] ? '<span class="done">✓ 100 %</span>' : ''}</button>`).join('')}</div>
+        <div class="stack" style="gap:12px">
+          <div class="card stack" style="gap:8px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${esc(ch.name)}</h3><span class="pill">étiquette <b style="color:var(--t-lab);font-weight:500">${ch.entry}</b></span></div><p>${esc(ch.txt)}</p></div>
+          <div id="mced" style="--edh:340px"></div>
+          <div class="row"><button class="btn pri" id="mcgo" type="button">Lancer la moulinette <kbd>Ctrl+Entrée</kbd></button><button class="btn" id="mclab" type="button">Déboguer au Labo</button><button class="btn ghost" id="mcrst" type="button">Repartir du modèle</button></div>
+          <div class="term" id="mcterm"><div class="l dm">$ moulinette --defi ${ch.id}\nEn attente de ton code…</div></div>
+        </div>
+      </div>
+    </div>`;
+    const ed = makeEditor($('#mced'), S.code[ch.id] || ch.tpl, { id: 'moulsrc', onChange: v => { S.code[ch.id] = v; save(); }, onKey: e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runIt(); } } });
+    $$('.chi').forEach(b => b.onclick = () => { MC = b.dataset.id; pageMoul(); });
+    $('#mcrst').onclick = () => { ed.value = ch.tpl; S.code[ch.id] = ch.tpl; save(); };
+    $('#mclab').onclick = () => {
+      const t = ch.tests()[0];
+      const pre = ['; Harnais de test de la moulinette (1er test)'];
+      Object.entries(t.D || {}).forEach(([i, v]) => pre.push(`\tmove.l\t#$${hx(v, 8)},d${i}`));
+      Object.entries(t.A || {}).forEach(([i, v]) => pre.push(`\tmovea.l\t#$${hx(v, 8)},a${i}`));
+      pre.push(`\tjsr\t${ch.entry}`, '\tsimhalt', '');
+      const data = (t.mem || []).map(([a, b]) => `\torg\t$${hx(a, 4)}\n\tdc.b\t${b.map(x => '$' + hx(x, 2)).join(',')}`).join('\n');
+      openInLabo(pre.join('\n') + '\n' + ed.value + '\n\n' + data);
+    };
+    let timers = [];
+    function runIt() {
+      timers.forEach(clearTimeout); timers = [];
+      const r = G.runChallenge(ch, ed.value);
+      const term = $('#mcterm'); term.innerHTML = '';
+      const line = (cls, txt, d) => timers.push(setTimeout(() => { const l = document.createElement('div'); l.className = 'l ' + cls; l.textContent = txt; term.appendChild(l); term.scrollTop = term.scrollHeight; }, d));
+      line('dm', `$ moulinette --defi ${ch.id}`, 0);
+      if (r.fatal) { line('kok', '[FATAL] ' + r.fatal, 120); ed.mark({ err: r.line }); sfx('ko'); return; }
+      line('hd', `${r.total} tests · registres non utilisés remplis au hasard`, 120);
+      r.report.forEach((t, i) => line(t.ok ? 'okk' : 'kok', `${t.ok ? '[ OK ]' : '[ KO ]'} ${t.name}${t.ok ? `  (${t.steps} instr.)` : '\n        ' + t.msg}`, 260 + i * 170));
+      const pct = Math.round(r.passed / r.total * 100);
+      timers.push(setTimeout(() => {
+        line(pct === 100 ? 'okk' : 'kok', `\nRésultat : ${r.passed}/${r.total} · ${pct} %`, 0);
+        if (pct === 100) {
+          const first = !S.solved[ch.id]; S.solved[ch.id] = true; touchDay();
+          if (first) { S.xp += 40 * ch.lvl; popAt($('#mcgo'), `+${40 * ch.lvl} XP`); confetti(120); sfx('lvl'); }
+          else sfx('ok');
+          save(); hud(); checkBadges();
+          const b = $(`.chi[data-id="${ch.id}"]`); if (b && !$('.done', b)) b.insertAdjacentHTML('beforeend', '<span class="done">✓ 100 %</span>');
+        } else { sfx('ko'); shake($('#mcterm')); }
+      }, 300 + r.report.length * 170));
+    }
+    $('#mcgo').onclick = runIt;
+    cleanup = () => timers.forEach(clearTimeout);
+  }
+
+  /* ================= EXAMEN BLANC ================= */
+  let EX = null;
+  function pageExam() {
+    if (!EX) return examIntro();
+    if (EX.graded) return examResult();
+    examRun();
+  }
+  function examIntro() {
+    app.innerHTML = `
+    <div class="stack" style="gap:18px;max-width:880px">
+      <div class="stack" style="gap:8px"><span class="eyebrow">Examen blanc · conditions réelles</span><h2>1 heure, 4 exercices, noté sur 20</h2><p class="lead">Un sujet complet généré au format du contrôle S3. Pas de correction pendant l'épreuve. À la fin, ta note, le détail par exercice et la correction pas à pas.</p></div>
+      <div class="card"><div class="tblwrap"><table class="t"><thead><tr><th>Exercice</th><th>Contenu</th><th>Barème</th></tr></thead><tbody>
+        <tr><td>1</td><td>4 instructions MOVE : mémoire + registres</td><td>6 pts (1,5 par ligne)</td></tr>
+        <tr><td>2</td><td>4 additions : résultat + N Z V C</td><td>4 pts (0,5 résultat + 0,5 flags)</td></tr>
+        <tr><td>3</td><td>4 questions de cours</td><td>4 pts</td></tr>
+        <tr><td>4</td><td>Programme à tracer : D1, D2, D3, D4</td><td>6 pts (1,5 par registre)</td></tr></tbody></table></div>
+        <p class="tiny" style="margin-top:10px">Barème estimé à partir du sujet (points par exercice). Ne détaille pas tes calculs, comme au vrai contrôle.</p></div>
+      <div class="row"><button class="btn pri" id="exgo" type="button">Commencer l'examen</button><label class="check"><input type="checkbox" id="exshort"> Version courte (20 min)</label></div>
+      ${S.exams.length ? `<div class="card"><span class="eyebrow">Historique</span><div class="tblwrap"><table class="t" style="margin-top:8px"><thead><tr><th>Date</th><th>Note</th><th>Ex.1</th><th>Ex.2</th><th>Ex.3</th><th>Ex.4</th></tr></thead><tbody>${S.exams.slice(-8).reverse().map(e => `<tr><td>${esc(e.date)}</td><td class="mono"><b>${String(e.score).replace('.', ',')}</b></td>${e.parts.map(p => `<td class="mono">${String(p).replace('.', ',')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>` : ''}
+    </div>`;
+    $('#exgo').onclick = () => { EX = G.genExam(); EX.end = Date.now() + ($('#exshort').checked ? 20 : 60) * 60000; EX.ans = {}; examRun(); };
+  }
+  function examRun() {
+    const { st, e1, e2, e3, e4 } = EX;
+    app.innerHTML = `
+    <div class="timer"><span class="clock" id="exclock">60:00</span><span class="sub">Les réponses sont gardées si tu changes de page.</span><button class="btn pri" id="exsub" type="button">Rendre la copie</button></div>
+    <div class="stack" style="gap:28px">
+      <section class="exsec"><div class="hdr"><h3>Exercice 1 <span class="tiny">(6 points)</span></h3><span class="sub">Nouveau contenu de la mémoire et des registres modifiés. Mémoire et registres réinitialisés à chaque instruction.</span></div>
+        ${initPanel(st)}
+        ${e1.map((g, i) => `<div class="erow"><div class="instr" style="font-size:16px">${hl('\t' + g.ins).replace(/^\t/, '')}</div>
+          <div class="memin">${[0, 8, 16].map((o, j) => `<span class="ad">$${hx(st.base + o, 6)}</span><input class="field" data-x="m${i}_${j}" value="${st.mem.slice(o, o + 8).map(b => hx(b, 2)).join(' ')}" autocomplete="off" spellcheck="false" aria-label="Instruction ${i + 1}, ligne $${hx(st.base + o, 6)}">`).join('')}</div>
+          <div><label class="lab">Registres modifiés</label><input class="field" data-x="r${i}" placeholder="A1 = $00005004 ou « aucun »" autocomplete="off" spellcheck="false"></div></div>`).join('')}
+      </section>
+      <section class="exsec"><div class="hdr"><h3>Exercice 2 <span class="tiny">(4 points)</span></h3><span class="sub">Résultat des additions et flags N Z V C.</span></div>
+        ${e2.map((q, i) => `<div class="erow e2r"><div class="mono" style="font-size:18px">${q.text} <span class="tiny">(${q.s * 8} bits)</span></div><input class="field" data-x="a${i}" placeholder="$..." autocomplete="off" spellcheck="false"><div class="mini-fl">${['N', 'Z', 'V', 'C'].map(f => `<button type="button" data-fl="${i}${f}" aria-label="Flag ${f}">${f}</button>`).join('')}</div></div>`).join('')}
+        <p class="tiny">Un flag allumé (bleu) = 1, éteint = 0.</p>
+      </section>
+      <section class="exsec"><div class="hdr"><h3>Exercice 3 <span class="tiny">(4 points)</span></h3></div>
+        ${e3.map((q, i) => `<div class="erow e3r"><span>${esc(q.q)}</span><input class="field" data-x="q${i}" autocomplete="off" spellcheck="false"></div>`).join('')}
+      </section>
+      <section class="exsec"><div class="hdr"><h3>Exercice 4 <span class="tiny">(6 points)</span></h3><span class="sub">Valeurs des registres après exécution, hexadécimal 32 bits.</span></div>
+        <div class="grid2">${listing(e4.prog)}<div class="card ansgrid" style="grid-template-columns:repeat(2,minmax(0,1fr));align-content:start">${[1, 2, 3, 4].map(i => `<div><label class="lab">D${i} = $</label><input class="field" data-x="d${i}" autocomplete="off" spellcheck="false"></div>`).join('')}</div></div>
+      </section>
+      <div class="row"><button class="btn pri" id="exsub2" type="button">Rendre la copie</button><button class="btn ghost" id="exquit" type="button">Abandonner</button></div>
+    </div>`;
+    // restaurer / mémoriser
+    $$('[data-x]').forEach(inp => { if (EX.ans[inp.dataset.x] !== undefined) inp.value = EX.ans[inp.dataset.x]; inp.addEventListener('input', () => EX.ans[inp.dataset.x] = inp.value); });
+    $$('[data-fl]').forEach(b => { if (EX.ans['f' + b.dataset.fl]) b.classList.add('on'); b.onclick = () => { const k = 'f' + b.dataset.fl; EX.ans[k] = !EX.ans[k]; b.classList.toggle('on', EX.ans[k]); }; });
+    const submit = () => { gradeExam(); examResult(); };
+    $('#exsub').onclick = submit; $('#exsub2').onclick = submit;
+    let armed = false;
+    $('#exquit').onclick = e => { if (!armed) { armed = true; e.target.textContent = 'Confirmer l\'abandon'; return; } EX = null; examIntro(); };
+    const tickc = () => { const ms = EX.end - Date.now(); if (ms <= 0) { toast('<b>Temps écoulé.</b> Copie ramassée.'); submit(); return; } const m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60; const c = $('#exclock'); if (!c) return; c.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`; c.classList.toggle('warn', ms < 5 * 60000); };
+    tickc(); const iv = setInterval(tickc, 1000); cleanup = () => clearInterval(iv);
+  }
+  function parseRegs(t) {
+    t = (t || '').trim(); const out = {};
+    if (!t || /^aucun/i.test(t) || /^rien/i.test(t) || t === '-') return out;
+    const re = /\b([DA][0-7])\s*[=:]\s*\$?([0-9A-Fa-f]{1,8})\b/g; let m; while ((m = re.exec(t))) out[m[1].toUpperCase()] = parseInt(m[2], 16) >>> 0;
+    return out;
+  }
+  function gradeExam() {
+    const { st, e1, e2, e3, e4, ans } = EX; const det = { e1: [], e2: [], e3: [], e4: [] };
+    let p1 = 0, p2 = 0, p3 = 0, p4 = 0;
+    e1.forEach((g, i) => {
+      const r = g.res;
+      const memOk = [0, 1, 2].every(j => { const v = ans[`m${i}_${j}`]; const b = parseBytes(v !== undefined ? v : st.mem.slice(j * 8, j * 8 + 8).map(x => hx(x, 2)).join(' ')); return b && b.every((x, k) => x === r.mem[j * 8 + k]); });
+      const given = parseRegs(ans['r' + i]); const exp = {}; r.regChanged.forEach(n => exp[n] = n[0] === 'D' ? r.D[+n[1]] : r.A[+n[1]]);
+      const claimed = Object.keys(given).filter(k => given[k] !== (k[0] === 'D' ? st.D[+k[1]] : st.A[+k[1]]));
+      const regOk = Object.entries(exp).every(([k, v]) => given[k] === v) && claimed.every(k => exp[k] !== undefined);
+      const hasMem = r.memChanged.some(Boolean), hasReg = r.regChanged.length > 0;
+      const pts = memOk && regOk ? 1.5 : ((memOk && hasMem) || (regOk && hasReg)) && hasMem && hasReg ? 0.75 : 0; p1 += pts; det.e1.push({ memOk, regOk, pts });
+    });
+    e2.forEach((q, i) => { const v = parseHex(ans['a' + i] || ''); const rok = v === q.r; const fok = ['N', 'Z', 'V', 'C'].every(f => (ans['f' + i + f] ? 1 : 0) === q[f]); const pts = (rok ? .5 : 0) + (fok ? .5 : 0); p2 += pts; det.e2.push({ rok, fok, pts }); });
+    e3.forEach((q, i) => { const ok = G.check3(q, ans['q' + i] || ''); if (ok) p3++; det.e3.push({ ok }); });
+    [1, 2, 3, 4].forEach((n, k) => { const ok = parseHex(ans['d' + n] || '') === e4.ans[k]; if (ok) p4 += 1.5; det.e4.push({ ok }); });
+    const score = Math.round((p1 + p2 + p3 + p4) * 4) / 4;
+    EX.graded = { score, parts: [p1, p2, p3, p4], det };
+    const d = new Date(); S.exams.push({ date: d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }), score, parts: [p1, p2, p3, p4] });
+    S.xp += Math.round(score * 5); touchDay();
+    // statistiques d'entraînement
+    det.e1.forEach(x => award('ex1', x.pts === 1.5, 0, null, true)); det.e2.forEach(x => award('ex2', x.pts === 1, 0, null, true)); det.e3.forEach(x => award('ex3', x.ok, 0, null, true)); det.e4.forEach(x => award('ex4', x.ok, 0, null, true)); checkBadges();
+    if (score >= 16) grant('e16'); if (score >= 20) grant('e20');
+    save(); hud();
+  }
+  function examResult() {
+    const { st, e1, e2, e3, e4, graded } = EX; const { score, parts, det } = graded;
+    const C = 2 * Math.PI * 70, frac = score / 20;
+    const mention = score >= 18 ? 'Excellent. Tu es prêt.' : score >= 16 ? 'Très bien. Peaufine les détails.' : score >= 12 ? 'Correct. Retravaille les exercices en rouge.' : score >= 8 ? 'Fragile. Reprends la méthode exercice par exercice.' : 'On reprend les bases : commence par la Méthode 20/20.';
+    app.innerHTML = `
+    <div class="stack" style="gap:22px">
+      <div class="card row" style="gap:26px;align-items:center">
+        <svg class="score-ring" viewBox="0 0 170 170" role="img" aria-label="Note ${score} sur 20"><circle cx="85" cy="85" r="70" fill="none" stroke="var(--line2)" stroke-width="12"/><circle id="ring" cx="85" cy="85" r="70" fill="none" stroke="var(--acc)" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C}" transform="rotate(-90 85 85)" style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1)"/><text x="85" y="92" text-anchor="middle" fill="var(--fg)" font-family="Chakra Petch, sans-serif" font-size="38" font-weight="700" id="sc">0</text><text x="85" y="116" text-anchor="middle" fill="var(--muted)" font-size="13" font-family="JetBrains Mono, monospace">/ 20</text></svg>
+        <div class="stack" style="gap:10px;flex:1;min-width:220px"><span class="eyebrow">Résultat de l'examen blanc</span><h2>${mention}</h2>
+          <div class="grid4">${['Ex.1', 'Ex.2', 'Ex.3', 'Ex.4'].map((n, i) => `<div><div class="tiny">${n}</div><div class="mono" style="font-size:20px">${String(parts[i]).replace('.', ',')}<span class="tiny"> / ${[6, 4, 4, 6][i]}</span></div><div class="meter" style="margin-top:4px"><i style="width:${parts[i] / [6, 4, 4, 6][i] * 100}%"></i></div></div>`).join('')}</div>
+          <div class="row"><button class="btn pri" id="exagain" type="button">Nouvel examen</button><a class="btn" href="#guide">Revoir la méthode</a></div></div>
+      </div>
+      <section class="exsec"><div class="hdr"><h3>Correction · Exercice 1</h3></div>
+        ${e1.map((g, i) => `<div class="card stack" style="gap:10px"><div class="row" style="justify-content:space-between"><div class="instr" style="font-size:15px;padding:8px 12px">${esc(g.ins)}</div><span class="pill ${det.e1[i].pts === 1.5 ? 'ok' : 'ko'}">${String(det.e1[i].pts).replace('.', ',')} / 1,5</span></div>${chainHTML(G.explain1(st, g.ins))}<div class="memtbl">${memRows(st, g.res.mem, k => g.res.memChanged[k] ? 'ch' : '')}</div><div class="sub">Registres : ${regsChangedTxt(g.res)} ${det.e1[i].memOk ? '' : '· <span style="color:var(--ko)">mémoire fausse</span>'} ${det.e1[i].regOk ? '' : '· <span style="color:var(--ko)">registres faux</span>'}</div></div>`).join('')}
+      </section>
+      <section class="exsec"><div class="hdr"><h3>Correction · Exercice 2</h3></div>
+        ${e2.map((q, i) => `<div class="card stack" style="gap:8px"><div class="row" style="justify-content:space-between"><span class="mono" style="font-size:17px">${q.text} = $${hx(q.r, q.s * 2)} · N=${q.N} Z=${q.Z} V=${q.V} C=${q.C}</span><span class="pill ${det.e2[i].pts === 1 ? 'ok' : 'ko'}">${String(det.e2[i].pts).replace('.', ',')} / 1</span></div><div class="explain">${G.explain2(q).map(l => `<div>${l}</div>`).join('')}</div></div>`).join('')}
+      </section>
+      <section class="exsec"><div class="hdr"><h3>Correction · Exercice 3</h3></div>
+        ${e3.map((q, i) => `<div class="card stack" style="gap:6px"><div class="row" style="justify-content:space-between"><span>${esc(q.q)}</span><span class="pill ${det.e3[i].ok ? 'ok' : 'ko'}">${det.e3[i].ok ? '1' : '0'} / 1</span></div><span class="mono" style="color:var(--acc)">${esc(q.show)}</span><span class="sub">${esc(q.why)}</span></div>`).join('')}
+      </section>
+      <section class="exsec"><div class="hdr"><h3>Correction · Exercice 4</h3><button class="btn sm ghost" id="exlab" type="button">Tracer au Labo</button></div>
+        <div class="grid2">${listing(e4.prog)}<div class="stack">${e4.ex.map((x, k) => `<div class="card stack" style="gap:6px"><div class="row" style="justify-content:space-between"><span class="mono" style="color:var(--acc)">${x.t} = $${hx(e4.ans[k], 8)}</span><span class="pill ${det.e4[k].ok ? 'ok' : 'ko'}">${det.e4[k].ok ? '1,5' : '0'} / 1,5</span></div><div class="explain">${x.lines.map(l => `<div>${l}</div>`).join('')}</div></div>`).join('')}</div></div>
+      </section>
+    </div>`;
+    $('#exagain').onclick = () => { EX = null; examIntro(); };
+    $('#exlab').onclick = () => openInLabo(e4.prog);
+    requestAnimationFrame(() => { $('#ring').style.strokeDashoffset = C * (1 - frac); });
+    let k = 0; const steps = 30; const iv = setInterval(() => { k++; const v = Math.round(score * k / steps * 4) / 4; const el = $('#sc'); if (el) el.textContent = String(v).replace('.', ','); if (k >= steps) { clearInterval(iv); if (score >= 14) confetti(score >= 18 ? 220 : 120); } }, 40);
+    cleanup = () => clearInterval(iv);
+  }
+
+  /* ================= démarrage ================= */
+  function setAcc(a) { S.acc = a; document.documentElement.dataset.acc = a === 'blue' ? '' : a; if (a === 'blue') delete document.documentElement.dataset.acc; save(); hud(); }
+  $$('.sw').forEach(b => b.onclick = () => setAcc(b.dataset.acc));
+  $('#sndbtn').onclick = () => { S.snd = !S.snd; save(); hud(); if (S.snd) sfx('ok'); };
+  setAcc(S.acc || 'blue');
+  const setHH = () => document.documentElement.style.setProperty('--hh', $('.top').offsetHeight + 'px');
+  addEventListener('resize', setHH); setHH();
+  hud(); go();
+})();
+</script>
+</body></html>

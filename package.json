@@ -1,0 +1,10 @@
+{
+  "name": "labo-68k",
+  "version": "1.0.0",
+  "description": "Simulateur 68000, moulinette et entraînement au contrôle S3 d'architecture (EPITA)",
+  "scripts": {
+    "build": "sh build.sh",
+    "test": "node tests/test_engine.js && node tests/test_gen.js"
+  },
+  "license": "MIT"
+}
